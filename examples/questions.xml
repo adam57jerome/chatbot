@@ -1,0 +1,105 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<quiz>
+  <question type="category">
+    <category>
+      <text>Maths/Algèbre</text>
+    </category>
+  </question>
+  <question type="multichoice">
+    <name>
+      <text>Équation simple</text>
+    </name>
+    <questiontext format="html">
+      <text>Quelle est la solution de x + 2 = 4 ?</text>
+    </questiontext>
+    <generalfeedback>
+      <text></text>
+    </generalfeedback>
+    <single>true</single>
+    <shuffleanswers>true</shuffleanswers>
+    <answernumbering>none</answernumbering>
+    <answer fraction="0">
+      <text>1</text>
+      <feedback>
+        <text>Indice : isolez x.</text>
+      </feedback>
+    </answer>
+    <answer fraction="100">
+      <text>2</text>
+      <feedback>
+        <text>Correct, x = 2.</text>
+      </feedback>
+    </answer>
+    <answer fraction="0">
+      <text>3</text>
+      <feedback>
+        <text>Indice : isolez x.</text>
+      </feedback>
+    </answer>
+  </question>
+  <question type="category">
+    <category>
+      <text>Culture générale</text>
+    </category>
+  </question>
+  <question type="truefalse">
+    <name>
+      <text>Capitale de la France</text>
+    </name>
+    <questiontext format="html">
+      <text>Paris est la capitale de la France.</text>
+    </questiontext>
+    <generalfeedback>
+      <text></text>
+    </generalfeedback>
+    <answer fraction="100">
+      <text>true</text>
+      <feedback>
+        <text>Exact.</text>
+      </feedback>
+    </answer>
+    <answer fraction="0">
+      <text>false</text>
+      <feedback>
+        <text>La bonne réponse est Vrai.</text>
+      </feedback>
+    </answer>
+  </question>
+  <question type="category">
+    <category>
+      <text>Sciences</text>
+    </category>
+  </question>
+  <question type="multichoice">
+    <name>
+      <text>Planète rouge</text>
+    </name>
+    <questiontext format="html">
+      <text>Quelle planète est surnommée la planète rouge ?</text>
+    </questiontext>
+    <generalfeedback>
+      <text></text>
+    </generalfeedback>
+    <single>true</single>
+    <shuffleanswers>true</shuffleanswers>
+    <answernumbering>none</answernumbering>
+    <answer fraction="100">
+      <text>Mars</text>
+      <feedback>
+        <text>Oui, Mars est la planète rouge.</text>
+      </feedback>
+    </answer>
+    <answer fraction="0">
+      <text>Vénus</text>
+      <feedback>
+        <text>Non, c'est Mars.</text>
+      </feedback>
+    </answer>
+    <answer fraction="0">
+      <text>Jupiter</text>
+      <feedback>
+        <text>Non, c'est Mars.</text>
+      </feedback>
+    </answer>
+  </question>
+</quiz>

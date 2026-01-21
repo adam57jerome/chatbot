@@ -1,0 +1,32 @@
+[
+  {
+    "category": "Maths/Algèbre",
+    "type": "mcq",
+    "title": "Équation simple",
+    "question": "Quelle est la solution de x + 2 = 4 ?",
+    "choices": ["1", "2", "3"],
+    "correct_index": 1,
+    "feedback_correct": "Correct, x = 2.",
+    "feedback_incorrect": "Indice : isolez x."
+  },
+  {
+    "category": "Culture générale",
+    "type": "tf",
+    "title": "Capitale de la France",
+    "question": "Paris est la capitale de la France.",
+    "choices": ["Vrai", "Faux"],
+    "correct_index": 0,
+    "feedback_correct": "Exact.",
+    "feedback_incorrect": "La bonne réponse est Vrai."
+  },
+  {
+    "category": "Sciences",
+    "type": "mcq",
+    "title": "Planète rouge",
+    "question": "Quelle planète est surnommée la planète rouge ?",
+    "choices": ["Mars", "Vénus", "Jupiter"],
+    "correct_index": 0,
+    "feedback_correct": "Oui, Mars est la planète rouge.",
+    "feedback_incorrect": "Non, c'est Mars."
+  }
+]
