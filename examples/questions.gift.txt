@@ -1,0 +1,8 @@
+$CATEGORY: Maths/Algèbre
+::Équation simple:: Quelle est la solution de x + 2 = 4 ? {=1#Correct, x = 2. ~2#Indice : isolez x. ~3#Indice : isolez x.}
+
+$CATEGORY: Culture générale
+::Capitale de la France:: Paris est la capitale de la France. {T#Exact. F#La bonne réponse est Vrai.}
+
+$CATEGORY: Sciences
+::Planète rouge:: Quelle planète est surnommée la planète rouge ? {=Mars#Oui, Mars est la planète rouge. ~Vénus#Non, c'est Mars. ~Jupiter#Non, c'est Mars.}
