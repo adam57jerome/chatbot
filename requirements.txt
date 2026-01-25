@@ -1,2 +1,2 @@
-streamlit
-openai
+language-tool-python
+pywin32
