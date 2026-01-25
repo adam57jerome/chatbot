@@ -8,6 +8,7 @@ Précautions:
 - Mode simulation (dry-run) activé par défaut.
 - Les actions destructrices demandent confirmation.
 - Les dossiers système sont bloqués.
+- Aucune API externe ni dépendance hors bibliothèque standard.
 
 Structure des classes principales:
 - SettingsStore: charge/enregistre settings.json (thème, dernier dossier, dry-run)
@@ -27,11 +28,10 @@ import os
 import queue
 import re
 import shutil
-import sys
 import threading
 import time
 import tkinter as tk
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from hashlib import sha256
 from tkinter import filedialog, messagebox, ttk
 
