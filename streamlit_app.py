@@ -1,8 +1,9 @@
-import io
 import json
 from dataclasses import asdict, dataclass
 from typing import Dict, Optional, Tuple
 
+import numpy as np
+import pydeck as pdk
 import streamlit as st
 
 
@@ -11,6 +12,8 @@ class StlInfo:
     name: str
     triangles: int
     bounds_mm: Tuple[float, float, float]
+    vertices: np.ndarray
+    faces: np.ndarray
 
 
 @dataclass
@@ -21,24 +24,28 @@ class PrinterProfile:
     advanced: Dict[str, float]
 
 
-def _read_stl_vertices(data: bytes) -> Optional[Tuple[int, Tuple[float, float, float]]]:
+def _read_stl_vertices(data: bytes) -> Optional[Tuple[int, np.ndarray, np.ndarray]]:
     if len(data) < 84:
         return None
     triangles = int.from_bytes(data[80:84], byteorder="little", signed=False)
     expected_size = 84 + triangles * 50
     if len(data) >= expected_size:
         vertices = []
+        faces = []
         offset = 84
         for _ in range(triangles):
             offset += 12
+            face_indices = []
             for _ in range(3):
                 vx = _bytes_to_float(data[offset : offset + 4])
                 vy = _bytes_to_float(data[offset + 4 : offset + 8])
                 vz = _bytes_to_float(data[offset + 8 : offset + 12])
                 vertices.append((vx, vy, vz))
+                face_indices.append(len(vertices) - 1)
                 offset += 12
             offset += 2
-        return triangles, _bounds_from_vertices(vertices)
+            faces.append(face_indices)
+        return triangles, np.array(vertices), np.array(faces)
 
     try:
         text = data.decode("utf-8", errors="ignore")
@@ -47,6 +54,7 @@ def _read_stl_vertices(data: bytes) -> Optional[Tuple[int, Tuple[float, float, f
     if "vertex" not in text:
         return None
     vertices = []
+    faces = []
     triangles = 0
     for line in text.splitlines():
         line = line.strip()
@@ -55,10 +63,13 @@ def _read_stl_vertices(data: bytes) -> Optional[Tuple[int, Tuple[float, float, f
             if len(parts) == 4:
                 vertices.append(tuple(float(p) for p in parts[1:]))
         if line.startswith("endfacet"):
+            if len(vertices) >= (triangles + 1) * 3:
+                start = triangles * 3
+                faces.append([start, start + 1, start + 2])
             triangles += 1
     if not vertices:
         return None
-    return triangles, _bounds_from_vertices(vertices)
+    return triangles, np.array(vertices), np.array(faces)
 
 
 def _bytes_to_float(b: bytes) -> float:
@@ -81,13 +92,38 @@ def parse_stl(uploaded_file) -> Optional[StlInfo]:
     parsed = _read_stl_vertices(data)
     if not parsed:
         return None
-    triangles, bounds = parsed
-    return StlInfo(name=uploaded_file.name, triangles=triangles, bounds_mm=bounds)
+    triangles, vertices, faces = parsed
+    bounds = _bounds_from_vertices(vertices)
+    return StlInfo(
+        name=uploaded_file.name,
+        triangles=triangles,
+        bounds_mm=bounds,
+        vertices=vertices,
+        faces=faces,
+    )
 
 
 def recommend_scale(bounds: Tuple[float, float, float], build_size: Tuple[float, float, float]) -> float:
     ratios = [build / size if size > 0 else 1.0 for build, size in zip(build_size, bounds)]
     return min(ratios + [1.0])
+
+
+def suggest_orientation(vertices: np.ndarray) -> Dict[str, str]:
+    centered = vertices - vertices.mean(axis=0)
+    cov = np.cov(centered.T)
+    eigvals, eigvecs = np.linalg.eigh(cov)
+    order = np.argsort(eigvals)[::-1]
+    axes = eigvecs[:, order]
+    primary_axis = axes[:, 0]
+    secondary_axis = axes[:, 1]
+    axis_labels = ["X", "Y", "Z"]
+    primary_label = axis_labels[int(np.argmax(np.abs(primary_axis)))]
+    secondary_label = axis_labels[int(np.argmax(np.abs(secondary_axis)))]
+    return {
+        "primary": f"Axe principal ~ {primary_label}",
+        "secondary": f"Axe secondaire ~ {secondary_label}",
+        "tilt": "Inclinaison recommandée: 15° à 30° pour réduire les supports.",
+    }
 
 
 st.set_page_config(page_title="Flashforge Foto 8.9 - Configurateur", layout="wide")
@@ -153,6 +189,45 @@ if stl_info:
         )
     else:
         st.success("Le modèle tient dans le volume d'impression.", icon="✅")
+
+    st.subheader("Aperçu 3D")
+    max_points = 20000
+    vertices = stl_info.vertices
+    if vertices.shape[0] > max_points:
+        indices = np.linspace(0, vertices.shape[0] - 1, max_points).astype(int)
+        vertices = vertices[indices]
+    points = [
+        {"x": float(x), "y": float(y), "z": float(z), "color": [80, 180, 255]}
+        for x, y, z in vertices
+    ]
+    center = stl_info.vertices.mean(axis=0)
+    view_state = pdk.ViewState(
+        latitude=float(center[1]),
+        longitude=float(center[0]),
+        zoom=1.5,
+        pitch=45,
+    )
+    point_layer = pdk.Layer(
+        "PointCloudLayer",
+        data=points,
+        get_position="[x, y, z]",
+        get_color="color",
+        point_size=1,
+    )
+    deck = pdk.Deck(layers=[point_layer], initial_view_state=view_state, map_style=None)
+    st.pydeck_chart(deck, use_container_width=True)
+
+    st.subheader("Orientation conseillée")
+    orientation = suggest_orientation(stl_info.vertices)
+    st.markdown(
+        "\n".join(
+            [
+                f"- {orientation['primary']}",
+                f"- {orientation['secondary']}",
+                f"- {orientation['tilt']}",
+            ]
+        )
+    )
 
 st.divider()
 
