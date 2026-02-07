@@ -127,7 +127,9 @@ def suggest_orientation(vertices: np.ndarray) -> Dict[str, str]:
     }
 
 
-def build_analysis_text(stl_info: StlInfo, scale: float) -> Tuple[str, str]:
+def build_analysis_text(
+    stl_info: StlInfo, scale: float, settings: Dict[str, float | str]
+) -> Tuple[str, str, str]:
     volume_mm3 = stl_info.bounds_mm[0] * stl_info.bounds_mm[1] * stl_info.bounds_mm[2]
     analysis_lines = [
         f"Fichier : {stl_info.name}",
@@ -147,7 +149,28 @@ def build_analysis_text(stl_info: StlInfo, scale: float) -> Tuple[str, str]:
         recommendation_lines.append(f"- Échelle recommandée : {scale:.2f} pour rentrer dans le volume.")
     else:
         recommendation_lines.append("- Le modèle rentre dans le volume : aucune réduction nécessaire.")
-    return "\n".join(analysis_lines), "\n".join(recommendation_lines)
+    explanation_lines = [
+        "Pourquoi ces paramètres :",
+        (
+            f"- Hauteur de couche {settings['layer_height']:.2f} mm "
+            "pour équilibrer qualité et durée selon la taille de la pièce."
+        ),
+        (
+            f"- Exposition {settings['exposure']:.1f} s "
+            "pour assurer une polymérisation suffisante des couches normales."
+        ),
+        (
+            f"- Exposition base {settings['bottom_exposure']:.1f} s et "
+            f"{int(settings['bottom_layers'])} couches pour une bonne adhérence au plateau."
+        ),
+        (
+            f"- Distance de levage {settings['lift_distance']:.1f} mm "
+            "pour faciliter le décollement de la couche."
+        ),
+        f"- Supports nécessaires : {settings['supports']} selon la hauteur/élancement de la pièce.",
+        f"- Radeau nécessaire : {settings['raft']} selon la surface de contact.",
+    ]
+    return "\n".join(analysis_lines), "\n".join(recommendation_lines), "\n".join(explanation_lines)
 
 
 def recommend_print_settings(bounds: Tuple[float, float, float]) -> Dict[str, float | str]:
@@ -212,7 +235,7 @@ def build_preview_points(vertices: np.ndarray, faces: np.ndarray, max_points: in
     return np.array(points)
 
 
-def build_pdf_bytes(analysis: str, recommendations: str) -> bytes:
+def build_pdf_bytes(analysis: str, recommendations: str, explanations: str) -> bytes:
     from fpdf import FPDF
 
     pdf = FPDF()
@@ -225,6 +248,10 @@ def build_pdf_bytes(analysis: str, recommendations: str) -> bytes:
     pdf.multi_cell(0, 8, "Recommandations")
     pdf.ln(2)
     pdf.multi_cell(0, 6, recommendations)
+    pdf.ln(4)
+    pdf.multi_cell(0, 8, "Explications des paramètres")
+    pdf.ln(2)
+    pdf.multi_cell(0, 6, explanations)
     return pdf.output(dest="S").encode("latin1")
 
 
@@ -317,28 +344,29 @@ if stl_info:
         st.success("Le modèle tient dans le volume d'impression.", icon="✅")
 
     st.subheader("Aperçu 3D")
-    max_points = 20000
+    max_points = 25000
     vertices = build_preview_points(stl_info.vertices, stl_info.faces, max_points=max_points)
     center = stl_info.vertices.mean(axis=0)
     max_dim = max(stl_info.bounds_mm)
     scale_factor = 100.0 / max_dim if max_dim > 0 else 1.0
     preview_vertices = (vertices - center) * scale_factor
     points = [
-        {"x": float(x), "y": float(y), "z": float(z), "color": [80, 180, 255]}
+        {"x": float(x), "y": float(y), "z": float(z)}
         for x, y, z in preview_vertices
     ]
     view_state = pdk.ViewState(
         target=[0, 0, 0],
-        zoom=2.0,
-        rotation_orbit=45,
-        rotation_x=30,
+        zoom=2.2,
+        rotation_orbit=35,
+        rotation_x=25,
     )
     point_layer = pdk.Layer(
-        "PointCloudLayer",
+        "ScatterplotLayer",
         data=points,
         get_position="[x, y, z]",
-        get_color="color",
-        point_size=2,
+        get_fill_color=[80, 180, 255, 220],
+        get_radius=1.6,
+        pickable=False,
     )
     view = pdk.View(type="OrbitView", controller=True)
     deck = pdk.Deck(layers=[point_layer], initial_view_state=view_state, views=[view])
@@ -357,11 +385,14 @@ if stl_info:
     )
 
     st.subheader("Analyse & recommandations")
-    analysis_text, recommendation_text = build_analysis_text(stl_info, scale)
+    recommendations = recommend_print_settings(stl_info.bounds_mm)
+    analysis_text, recommendation_text, explanation_text = build_analysis_text(
+        stl_info, scale, recommendations
+    )
     st.text_area("Analyse de la pièce", value=analysis_text, height=140)
     st.text_area("Recommandations", value=recommendation_text, height=120)
+    st.text_area("Explication des paramètres", value=explanation_text, height=180)
     st.subheader("Paramètres recommandés")
-    recommendations = recommend_print_settings(stl_info.bounds_mm)
     if st.session_state.get("last_stl") != stl_info.name:
         profile.print_settings["layer_height"] = recommendations["layer_height"]
         profile.print_settings["bottom_layers"] = recommendations["bottom_layers"]
@@ -381,7 +412,7 @@ if stl_info:
     if importlib.util.find_spec("fpdf") is None:
         st.info("Installation requise pour le PDF : `pip install fpdf2`.")
     else:
-        pdf_bytes = build_pdf_bytes(analysis_text, recommendation_text)
+        pdf_bytes = build_pdf_bytes(analysis_text, recommendation_text, explanation_text)
         st.download_button(
             "Télécharger le rapport PDF",
             data=pdf_bytes,
