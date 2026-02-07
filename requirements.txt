@@ -1,2 +1,3 @@
 numpy
+fpdf2
 streamlit

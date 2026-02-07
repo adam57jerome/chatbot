@@ -5,6 +5,7 @@ from typing import Dict, Optional, Tuple
 import numpy as np
 import pydeck as pdk
 import streamlit as st
+from fpdf import FPDF
 
 
 @dataclass
@@ -126,6 +127,43 @@ def suggest_orientation(vertices: np.ndarray) -> Dict[str, str]:
     }
 
 
+def build_analysis_text(stl_info: StlInfo, scale: float) -> Tuple[str, str]:
+    volume_mm3 = stl_info.bounds_mm[0] * stl_info.bounds_mm[1] * stl_info.bounds_mm[2]
+    analysis_lines = [
+        f"Fichier : {stl_info.name}",
+        f"Triangles : {stl_info.triangles:,}",
+        (
+            "Dimensions (mm) : "
+            f"X {stl_info.bounds_mm[0]:.2f} / Y {stl_info.bounds_mm[1]:.2f} / Z {stl_info.bounds_mm[2]:.2f}"
+        ),
+        f"Volume approximatif (boîte englobante) : {volume_mm3:,.0f} mm³",
+    ]
+    recommendation_lines = [
+        "Recommandations :",
+        "- Orienter la pièce avec la face la plus large vers le plateau pour réduire les supports.",
+        "- Inclinaison de 15° à 30° si la pièce présente de grandes surfaces planes.",
+    ]
+    if scale < 1.0:
+        recommendation_lines.append(f"- Échelle recommandée : {scale:.2f} pour rentrer dans le volume.")
+    else:
+        recommendation_lines.append("- Le modèle rentre dans le volume : aucune réduction nécessaire.")
+    return "\n".join(analysis_lines), "\n".join(recommendation_lines)
+
+
+def build_pdf_bytes(analysis: str, recommendations: str) -> bytes:
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_font("Helvetica", size=12)
+    pdf.multi_cell(0, 8, "Analyse STL")
+    pdf.ln(2)
+    pdf.multi_cell(0, 6, analysis)
+    pdf.ln(4)
+    pdf.multi_cell(0, 8, "Recommandations")
+    pdf.ln(2)
+    pdf.multi_cell(0, 6, recommendations)
+    return pdf.output(dest="S").encode("latin1")
+
+
 st.set_page_config(page_title="Flashforge Foto 8.9 - Configurateur", layout="wide")
 
 st.title("🖨️ Configurateur Foto 8.9 (Résine)")
@@ -227,6 +265,18 @@ if stl_info:
                 f"- {orientation['tilt']}",
             ]
         )
+    )
+
+    st.subheader("Analyse & recommandations")
+    analysis_text, recommendation_text = build_analysis_text(stl_info, scale)
+    st.text_area("Analyse de la pièce", value=analysis_text, height=140)
+    st.text_area("Recommandations", value=recommendation_text, height=120)
+    pdf_bytes = build_pdf_bytes(analysis_text, recommendation_text)
+    st.download_button(
+        "Télécharger le rapport PDF",
+        data=pdf_bytes,
+        file_name="rapport_stl_foto89.pdf",
+        mime="application/pdf",
     )
 
 st.divider()
