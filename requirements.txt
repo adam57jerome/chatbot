@@ -1,2 +1,5 @@
+numpy
+fpdf2
+plotly
 streamlit
-openai
+trimesh
