@@ -364,9 +364,12 @@ def load_stl_mesh(data: bytes) -> Any:
     if isinstance(mesh, trimesh.Scene):
         parts = mesh.dump()
         mesh = trimesh.util.concatenate(tuple(parts))
-    mesh.remove_duplicate_faces()
-    mesh.remove_degenerate_faces()
-    mesh.remove_unreferenced_vertices()
+    if hasattr(mesh, "remove_duplicate_faces"):
+        mesh.remove_duplicate_faces()
+    if hasattr(mesh, "remove_degenerate_faces"):
+        mesh.remove_degenerate_faces()
+    if hasattr(mesh, "remove_unreferenced_vertices"):
+        mesh.remove_unreferenced_vertices()
     mesh.process(validate=True)
     return mesh
 
