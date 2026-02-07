@@ -440,21 +440,33 @@ def render_stl_viewer(vertices: np.ndarray, faces: np.ndarray) -> None:
 def build_pdf_bytes(analysis: str, recommendations: str, explanations: str) -> bytes:
     from fpdf import FPDF
 
+    def _sanitize(text: str) -> str:
+        replacements = {
+            "\u2019": "'",
+            "\u2018": "'",
+            "\u2013": "-",
+            "\u2014": "-",
+            "\u2026": "...",
+        }
+        for src, dest in replacements.items():
+            text = text.replace(src, dest)
+        return text
+
     pdf = FPDF()
     pdf.add_page()
     pdf.set_font("Helvetica", size=12)
     pdf.multi_cell(0, 8, "Analyse STL")
     pdf.ln(2)
-    pdf.multi_cell(0, 6, analysis)
+    pdf.multi_cell(0, 6, _sanitize(analysis))
     pdf.ln(4)
     pdf.multi_cell(0, 8, "Recommandations")
     pdf.ln(2)
-    pdf.multi_cell(0, 6, recommendations)
+    pdf.multi_cell(0, 6, _sanitize(recommendations))
     pdf.ln(4)
     pdf.multi_cell(0, 8, "Explications des paramètres")
     pdf.ln(2)
-    pdf.multi_cell(0, 6, explanations)
-    return pdf.output(dest="S").encode("latin1")
+    pdf.multi_cell(0, 6, _sanitize(explanations))
+    return pdf.output(dest="S").encode("latin1", errors="replace")
 
 
 st.set_page_config(page_title="ADAM PARM3D", layout="wide")
