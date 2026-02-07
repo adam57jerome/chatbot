@@ -150,6 +150,44 @@ def build_analysis_text(stl_info: StlInfo, scale: float) -> Tuple[str, str]:
     return "\n".join(analysis_lines), "\n".join(recommendation_lines)
 
 
+def recommend_print_settings(bounds: Tuple[float, float, float]) -> Dict[str, str]:
+    x_dim, y_dim, z_dim = bounds
+    max_dim = max(bounds)
+    min_dim = min(bounds)
+
+    if max_dim >= 120:
+        layer_height = 0.1
+        exposure = 3.5
+        bottom_exposure = 45.0
+        bottom_layers = 8
+        lift_distance = 8.0
+    elif max_dim >= 60:
+        layer_height = 0.08
+        exposure = 3.0
+        bottom_exposure = 40.0
+        bottom_layers = 6
+        lift_distance = 7.0
+    else:
+        layer_height = 0.05
+        exposure = 2.5
+        bottom_exposure = 35.0
+        bottom_layers = 5
+        lift_distance = 6.0
+
+    supports_needed = z_dim > min_dim * 1.5 or z_dim > 60
+    raft_needed = min(x_dim, y_dim) < 25
+
+    return {
+        "layer_height": f"{layer_height:.2f} mm",
+        "exposure": f"{exposure:.1f} s",
+        "bottom_exposure": f"{bottom_exposure:.1f} s",
+        "bottom_layers": str(bottom_layers),
+        "lift_distance": f"{lift_distance:.1f} mm",
+        "supports": "Oui" if supports_needed else "Non",
+        "raft": "Oui" if raft_needed else "Non",
+    }
+
+
 def build_pdf_bytes(analysis: str, recommendations: str) -> bytes:
     from fpdf import FPDF
 
@@ -236,14 +274,17 @@ if stl_info:
     if vertices.shape[0] > max_points:
         indices = np.linspace(0, vertices.shape[0] - 1, max_points).astype(int)
         vertices = vertices[indices]
+    center = stl_info.vertices.mean(axis=0)
+    max_dim = max(stl_info.bounds_mm)
+    scale_factor = 100.0 / max_dim if max_dim > 0 else 1.0
+    preview_vertices = (vertices - center) * scale_factor
     points = [
         {"x": float(x), "y": float(y), "z": float(z), "color": [80, 180, 255]}
-        for x, y, z in vertices
+        for x, y, z in preview_vertices
     ]
-    center = stl_info.vertices.mean(axis=0)
     view_state = pdk.ViewState(
-        target=[float(center[0]), float(center[1]), float(center[2])],
-        zoom=1.5,
+        target=[0, 0, 0],
+        zoom=2.0,
         rotation_orbit=45,
         rotation_x=30,
     )
@@ -252,7 +293,7 @@ if stl_info:
         data=points,
         get_position="[x, y, z]",
         get_color="color",
-        point_size=1,
+        point_size=2,
     )
     view = pdk.View(type="OrbitView", controller=True)
     deck = pdk.Deck(layers=[point_layer], initial_view_state=view_state, views=[view])
@@ -274,6 +315,16 @@ if stl_info:
     analysis_text, recommendation_text = build_analysis_text(stl_info, scale)
     st.text_area("Analyse de la pièce", value=analysis_text, height=140)
     st.text_area("Recommandations", value=recommendation_text, height=120)
+    st.subheader("Paramètres recommandés")
+    recommendations = recommend_print_settings(stl_info.bounds_mm)
+    rec_col1, rec_col2, rec_col3 = st.columns(3)
+    rec_col1.metric("Hauteur de couche", recommendations["layer_height"])
+    rec_col1.metric("Exposition", recommendations["exposure"])
+    rec_col2.metric("Exposition base", recommendations["bottom_exposure"])
+    rec_col2.metric("Couches base", recommendations["bottom_layers"])
+    rec_col3.metric("Distance levage", recommendations["lift_distance"])
+    rec_col3.metric("Supports nécessaires", recommendations["supports"])
+    rec_col3.metric("Radeau nécessaire", recommendations["raft"])
     if importlib.util.find_spec("fpdf") is None:
         st.info("Installation requise pour le PDF : `pip install fpdf2`.")
     else:
