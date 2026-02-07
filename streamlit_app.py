@@ -127,10 +127,49 @@ def suggest_orientation(vertices: np.ndarray) -> Dict[str, str]:
     }
 
 
-def build_analysis_text(
-    stl_info: StlInfo, scale: float, settings: Dict[str, float | str]
-) -> Tuple[str, str, str]:
-    volume_mm3 = stl_info.bounds_mm[0] * stl_info.bounds_mm[1] * stl_info.bounds_mm[2]
+def compute_mesh_metrics(vertices: np.ndarray, faces: np.ndarray) -> Dict[str, float | None]:
+    if faces.size == 0:
+        return {
+            "surface_area": None,
+            "volume": None,
+            "proj_xy": None,
+            "proj_xz": None,
+            "proj_yz": None,
+        }
+    v0 = vertices[faces[:, 0]]
+    v1 = vertices[faces[:, 1]]
+    v2 = vertices[faces[:, 2]]
+    cross = np.cross(v1 - v0, v2 - v0)
+    area = 0.5 * np.linalg.norm(cross, axis=1)
+    total_area = float(np.sum(area))
+    normals = cross / (np.linalg.norm(cross, axis=1)[:, None] + 1e-9)
+    proj_xy = float(np.sum(np.abs(normals[:, 2]) * area))
+    proj_xz = float(np.sum(np.abs(normals[:, 1]) * area))
+    proj_yz = float(np.sum(np.abs(normals[:, 0]) * area))
+    volume = float(abs(np.sum(np.einsum("ij,ij->i", v0, np.cross(v1, v2))) / 6.0))
+    return {
+        "surface_area": total_area,
+        "volume": volume,
+        "proj_xy": proj_xy,
+        "proj_xz": proj_xz,
+        "proj_yz": proj_yz,
+    }
+
+
+def build_report(
+    stl_info: StlInfo,
+    scale: float,
+    settings: Dict[str, float | str],
+    resin_type: str,
+    temp_c: float,
+) -> Dict[str, str]:
+    metrics = compute_mesh_metrics(stl_info.vertices, stl_info.faces)
+    bbox_volume = stl_info.bounds_mm[0] * stl_info.bounds_mm[1] * stl_info.bounds_mm[2]
+    surface = metrics["surface_area"]
+    volume = metrics["volume"]
+    thickness = (2 * volume / surface) if surface and volume else None
+    flatness = (surface / volume) if surface and volume else None
+
     analysis_lines = [
         f"Fichier : {stl_info.name}",
         f"Triangles : {stl_info.triangles:,}",
@@ -138,65 +177,148 @@ def build_analysis_text(
             "Dimensions (mm) : "
             f"X {stl_info.bounds_mm[0]:.2f} / Y {stl_info.bounds_mm[1]:.2f} / Z {stl_info.bounds_mm[2]:.2f}"
         ),
-        f"Volume approximatif (boîte englobante) : {volume_mm3:,.0f} mm³",
+        f"Plus grande dimension : {max(stl_info.bounds_mm):.2f} mm",
+        f"Volume boîte englobante : {bbox_volume:,.0f} mm³",
     ]
-    recommendation_lines = [
-        "Recommandations :",
-        "- Orienter la pièce avec la face la plus large vers le plateau pour réduire les supports.",
-        "- Inclinaison de 15° à 30° si la pièce présente de grandes surfaces planes.",
+    if volume:
+        analysis_lines.append(f"Volume estimé : {volume:,.0f} mm³")
+    if surface:
+        analysis_lines.append(f"Surface estimée : {surface:,.0f} mm²")
+    if thickness:
+        analysis_lines.append(f"Épaisseur moyenne approx : {thickness:.2f} mm")
+    if flatness:
+        analysis_lines.append(f"Rapport surface/volume : {flatness:.2f}")
+    if metrics["proj_xy"]:
+        analysis_lines.append(
+            "Aires projetées (XY/XZ/YZ) : "
+            f"{metrics['proj_xy']:.0f} / {metrics['proj_xz']:.0f} / {metrics['proj_yz']:.0f} mm²"
+        )
+
+    risks = []
+    if metrics["proj_xy"] and surface and metrics["proj_xy"] / surface > 0.45:
+        risks.append("Grande surface plane → risque de ventouse (peel).")
+    if volume and bbox_volume and volume / bbox_volume < 0.2:
+        risks.append("Volume faible vs bounding box → possible cavité/hollow.")
+    if thickness and thickness < 1.0:
+        risks.append("Parois fines → supports délicats et expo à ajuster.")
+    if not risks:
+        risks.append("Aucun risque majeur détecté (à confirmer visuellement).")
+
+    orientation = [
+        "Orientation conseillée :",
+        "- Incliner 30–45° pour réduire l’aire projetée par couche.",
+        "- Ajouter 10–15° d’inclinaison secondaire pour éviter une ligne de peel.",
+        "- Préserver les zones visibles en limitant les supports sur ces faces.",
     ]
-    if scale < 1.0:
-        recommendation_lines.append(f"- Échelle recommandée : {scale:.2f} pour rentrer dans le volume.")
-    else:
-        recommendation_lines.append("- Le modèle rentre dans le volume : aucune réduction nécessaire.")
-    explanation_lines = [
+
+    supports = [
+        "Plan supports :",
+        "- Heavy sur les premiers points d’attaque.",
+        "- Medium ailleurs, avec bracing si pièce haute.",
+        "- Renforcer les grandes surfaces pour limiter l’arrachement.",
+    ]
+
+    params = [
+        "Paramètres recommandés :",
+        f"- Layer height : {settings['layer_height']:.2f} mm",
+        f"- Normal exposure : {settings['exposure']:.1f} s",
+        f"- Bottom layers : {int(settings['bottom_layers'])}",
+        f"- Bottom exposure : {settings['bottom_exposure']:.1f} s",
+        f"- Lift distance : {settings['lift_distance']:.1f} mm",
+        f"- Lift speed : {settings['lift_speed']:.0f} mm/min",
+        f"- Retract speed : {settings['retract_speed']:.0f} mm/min",
+        f"- Transition layers : {int(settings['transition_layers'])}",
+        f"- Rest/Light-off : {settings['rest_time']:.1f} s",
+    ]
+
+    explanation = [
         "Pourquoi ces paramètres :",
         (
             f"- Hauteur de couche {settings['layer_height']:.2f} mm "
-            "pour équilibrer qualité et durée selon la taille de la pièce."
+            "pour équilibrer qualité et durée."
         ),
         (
             f"- Exposition {settings['exposure']:.1f} s "
-            "pour assurer une polymérisation suffisante des couches normales."
+            "pour une polymérisation correcte."
         ),
         (
-            f"- Exposition base {settings['bottom_exposure']:.1f} s et "
-            f"{int(settings['bottom_layers'])} couches pour une bonne adhérence au plateau."
+            f"- Expo base {settings['bottom_exposure']:.1f} s et "
+            f"{int(settings['bottom_layers'])} couches pour l’adhérence plateau."
         ),
         (
-            f"- Distance de levage {settings['lift_distance']:.1f} mm "
-            "pour faciliter le décollement de la couche."
+            f"- Lift {settings['lift_distance']:.1f} mm "
+            "pour le décollement sans arrachement."
         ),
-        f"- Supports nécessaires : {settings['supports']} selon la hauteur/élancement de la pièce.",
-        f"- Radeau nécessaire : {settings['raft']} selon la surface de contact.",
+        f"- Supports : {settings['supports']} / Radeau : {settings['raft']}.",
+        f"- Résine : {resin_type}, Température : {temp_c:.1f}°C.",
     ]
-    return "\n".join(analysis_lines), "\n".join(recommendation_lines), "\n".join(explanation_lines)
+
+    diagnostics = [
+        "Corrections si échec :",
+        "- Pièce collée au FEP : +expo normale, supports plus épais, lift plus lent.",
+        "- Radeau qui se décolle : +bottom layers/expo, vérifier nivellement.",
+        "- Détails bouchés : -0,2 à -0,5 s d’expo normale.",
+        "- Supports cassants : expo +0,2 s et bracing.",
+    ]
+
+    checklist = [
+        "Checklist avant impression :",
+        "- Résine mélangée, température stable.",
+        "- Plateau nivelé, FEP propre.",
+        "- Couvercle fermé, clé USB OK.",
+    ]
+
+    calibration = [
+        "Plan de calibration :",
+        "- Imprimer un test (AmeraLabs Town / Boxes).",
+        "- Ajuster l’expo par pas de 0,2 s.",
+    ]
+
+    return {
+        "analysis": "\n".join(analysis_lines),
+        "risks": "\n".join(risks),
+        "orientation": "\n".join(orientation),
+        "supports": "\n".join(supports),
+        "parameters": "\n".join(params),
+        "explanations": "\n".join(explanation),
+        "diagnostics": "\n".join(diagnostics),
+        "checklist": "\n".join(checklist),
+        "calibration": "\n".join(calibration),
+    }
 
 
-def recommend_print_settings(bounds: Tuple[float, float, float], profile: str) -> Dict[str, float | str]:
+def recommend_print_settings(
+    bounds: Tuple[float, float, float],
+    target_layer: float,
+    resin_type: str,
+    temp_c: float,
+    profile: str,
+) -> Dict[str, float | str]:
     x_dim, y_dim, z_dim = bounds
     max_dim = max(bounds)
     min_dim = min(bounds)
     volume_mm3 = x_dim * y_dim * z_dim
 
-    if max_dim >= 120:
-        layer_height = 0.1
-        exposure = 3.5
-        bottom_exposure = 45.0
-        bottom_layers = 8
-        lift_distance = 8.0
-    elif max_dim >= 60:
-        layer_height = 0.08
-        exposure = 3.0
-        bottom_exposure = 40.0
+    if target_layer >= 0.09:
+        layer_height = 0.10
+        exposure = 4.5
+        bottom_exposure = 50.0
         bottom_layers = 6
-        lift_distance = 7.0
+        lift_distance = 10.0
+        lift_speed = 40.0
+        retract_speed = 140.0
+        transition_layers = 8
+        rest_time = 0.8
     else:
         layer_height = 0.05
-        exposure = 2.5
-        bottom_exposure = 35.0
-        bottom_layers = 5
-        lift_distance = 6.0
+        exposure = 2.6
+        bottom_exposure = 45.0
+        bottom_layers = 6
+        lift_distance = 8.0
+        lift_speed = 50.0
+        retract_speed = 150.0
+        transition_layers = 8
+        rest_time = 0.8
 
     if profile == "detailed":
         layer_height = max(0.03, layer_height - 0.02)
@@ -204,6 +326,17 @@ def recommend_print_settings(bounds: Tuple[float, float, float], profile: str) -
     elif profile == "fast":
         layer_height = min(0.12, layer_height + 0.02)
         exposure = max(2.0, exposure - 0.2)
+
+    if resin_type in {"abs-like", "tough"}:
+        exposure += 0.6
+        bottom_exposure += 5.0
+    if temp_c < 20:
+        exposure *= 1.15
+        lift_speed = max(30.0, lift_speed * 0.8)
+
+    if max_dim >= 120:
+        lift_distance += 2.0
+        bottom_layers += 2
 
     supports_needed = z_dim > min_dim * 1.5 or z_dim > 60 or volume_mm3 > 200000
     raft_needed = min(x_dim, y_dim) < 25 or volume_mm3 < 20000
@@ -214,6 +347,10 @@ def recommend_print_settings(bounds: Tuple[float, float, float], profile: str) -
         "bottom_exposure": bottom_exposure,
         "bottom_layers": bottom_layers,
         "lift_distance": lift_distance,
+        "lift_speed": lift_speed,
+        "retract_speed": retract_speed,
+        "transition_layers": transition_layers,
+        "rest_time": rest_time,
         "supports": "Oui" if supports_needed else "Non",
         "raft": "Oui" if raft_needed else "Non",
     }
@@ -356,6 +493,48 @@ with st.sidebar:
     st.header("STL")
     uploaded_file = st.file_uploader("Importer un fichier STL", type=["stl"])
     st.caption("Analyse locale : dimensions et nombre de triangles.")
+    st.subheader("Machine")
+    machine_model = st.text_input(
+        "Modèle imprimante",
+        value="Flashforge Foto 8.9",
+        help="Ex : Flashforge Foto 8.9",
+    )
+    machine_tech = st.text_input(
+        "Technologie",
+        value="MSLA mono 405 nm",
+        help="Ex : MSLA mono 405 nm",
+    )
+    export_format = st.text_input(
+        "Format export",
+        value=".ctb",
+        help="Ex : .ctb ou .svgx",
+    )
+    st.subheader("Résine")
+    resin_brand = st.text_input(
+        "Marque / modèle",
+        value="Standard Resin",
+        help="Ex : Anycubic Standard Resin V2",
+    )
+    resin_color = st.selectbox(
+        "Couleur",
+        options=["gris", "blanc", "noir", "transparente", "autre"],
+    )
+    resin_type = st.selectbox(
+        "Type",
+        options=["standard", "abs-like", "tough", "water-washable", "flexible"],
+    )
+    temp_c = st.number_input(
+        "Température ambiante (°C)",
+        value=22.0,
+        step=0.5,
+        help="Température de la pièce d'impression.",
+    )
+    st.subheader("Objectif")
+    target_layer = st.selectbox(
+        "Hauteur de couche",
+        options=[0.05, 0.1],
+        format_func=lambda v: "0.05 mm (qualité)" if v < 0.1 else "0.10 mm (rapide)",
+    )
     profile_choice = st.selectbox(
         "Profil d'impression",
         options=["standard", "detailed", "fast"],
@@ -389,6 +568,8 @@ if "profile" not in st.session_state:
             "lift_distance": 8.0,
             "lift_speed": 65.0,
             "retract_speed": 150.0,
+            "transition_layers": 8,
+            "rest_time": 0.8,
         },
         advanced={
             "bottom_pwm": 255,
@@ -437,13 +618,19 @@ if stl_info:
     )
 
     st.subheader("Analyse & recommandations")
-    recommendations = recommend_print_settings(stl_info.bounds_mm, profile_choice)
-    analysis_text, recommendation_text, explanation_text = build_analysis_text(
-        stl_info, scale, recommendations
+    recommendations = recommend_print_settings(
+        stl_info.bounds_mm, target_layer, resin_type, temp_c, profile_choice
     )
-    st.text_area("Analyse de la pièce", value=analysis_text, height=140)
-    st.text_area("Recommandations", value=recommendation_text, height=120)
-    st.text_area("Explication des paramètres", value=explanation_text, height=180)
+    report = build_report(stl_info, scale, recommendations, resin_type, temp_c)
+    st.text_area("Résumé STL", value=report["analysis"], height=160)
+    st.text_area("Risques STL", value=report["risks"], height=120)
+    st.text_area("Orientation conseillée", value=report["orientation"], height=120)
+    st.text_area("Plan supports", value=report["supports"], height=120)
+    st.text_area("Paramètres recommandés", value=report["parameters"], height=180)
+    st.text_area("Explication des paramètres", value=report["explanations"], height=180)
+    st.text_area("Corrections si échec", value=report["diagnostics"], height=160)
+    st.text_area("Checklist avant impression", value=report["checklist"], height=120)
+    st.text_area("Plan de calibration", value=report["calibration"], height=120)
     st.subheader("Paramètres recommandés")
     if st.session_state.get("last_stl") != stl_info.name:
         profile.print_settings["layer_height"] = recommendations["layer_height"]
@@ -451,6 +638,10 @@ if stl_info:
         profile.print_settings["exposure_time"] = recommendations["exposure"]
         profile.print_settings["bottom_exposure"] = recommendations["bottom_exposure"]
         profile.print_settings["lift_distance"] = recommendations["lift_distance"]
+        profile.print_settings["lift_speed"] = recommendations["lift_speed"]
+        profile.print_settings["retract_speed"] = recommendations["retract_speed"]
+        profile.print_settings["transition_layers"] = recommendations["transition_layers"]
+        profile.print_settings["rest_time"] = recommendations["rest_time"]
         st.session_state.last_stl = stl_info.name
         st.info("Paramètres recommandés appliqués à la pièce.")
     rec_col1, rec_col2, rec_col3 = st.columns(3)
@@ -464,7 +655,7 @@ if stl_info:
     if importlib.util.find_spec("fpdf") is None:
         st.info("Installation requise pour le PDF : `pip install fpdf2`.")
     else:
-        pdf_bytes = build_pdf_bytes(analysis_text, recommendation_text, explanation_text)
+        pdf_bytes = build_pdf_bytes(report["analysis"], report["parameters"], report["explanations"])
         st.download_button(
             "Télécharger le rapport PDF",
             data=pdf_bytes,
@@ -574,6 +765,18 @@ with print_tab:
             value=profile.print_settings["lift_distance"],
             step=0.1,
             help="Valeur par défaut : 8.0 mm",
+        )
+        profile.print_settings["transition_layers"] = st.number_input(
+            "Couches de transition",
+            value=profile.print_settings.get("transition_layers", 8),
+            step=1,
+            help="Valeur par défaut : 8",
+        )
+        profile.print_settings["rest_time"] = st.number_input(
+            "Rest / light-off (s)",
+            value=profile.print_settings.get("rest_time", 0.8),
+            step=0.1,
+            help="Valeur par défaut : 0.8 s",
         )
         profile.print_settings["lift_speed"] = st.number_input(
             "Vitesse de levage (mm/min)",
