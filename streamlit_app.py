@@ -4,8 +4,8 @@ from dataclasses import asdict, dataclass
 from typing import Dict, Optional, Tuple
 
 import numpy as np
-import pydeck as pdk
 import streamlit as st
+import streamlit.components.v1 as components
 
 
 @dataclass
@@ -173,10 +173,11 @@ def build_analysis_text(
     return "\n".join(analysis_lines), "\n".join(recommendation_lines), "\n".join(explanation_lines)
 
 
-def recommend_print_settings(bounds: Tuple[float, float, float]) -> Dict[str, float | str]:
+def recommend_print_settings(bounds: Tuple[float, float, float], profile: str) -> Dict[str, float | str]:
     x_dim, y_dim, z_dim = bounds
     max_dim = max(bounds)
     min_dim = min(bounds)
+    volume_mm3 = x_dim * y_dim * z_dim
 
     if max_dim >= 120:
         layer_height = 0.1
@@ -197,8 +198,15 @@ def recommend_print_settings(bounds: Tuple[float, float, float]) -> Dict[str, fl
         bottom_layers = 5
         lift_distance = 6.0
 
-    supports_needed = z_dim > min_dim * 1.5 or z_dim > 60
-    raft_needed = min(x_dim, y_dim) < 25
+    if profile == "detailed":
+        layer_height = max(0.03, layer_height - 0.02)
+        exposure += 0.2
+    elif profile == "fast":
+        layer_height = min(0.12, layer_height + 0.02)
+        exposure = max(2.0, exposure - 0.2)
+
+    supports_needed = z_dim > min_dim * 1.5 or z_dim > 60 or volume_mm3 > 200000
+    raft_needed = min(x_dim, y_dim) < 25 or volume_mm3 < 20000
 
     return {
         "layer_height": layer_height,
@@ -211,28 +219,85 @@ def recommend_print_settings(bounds: Tuple[float, float, float]) -> Dict[str, fl
     }
 
 
-def build_preview_points(vertices: np.ndarray, faces: np.ndarray, max_points: int = 40000) -> np.ndarray:
+def build_preview_mesh(
+    vertices: np.ndarray, faces: np.ndarray, max_faces: int = 20000
+) -> Tuple[np.ndarray, np.ndarray]:
     if faces.size == 0:
-        return vertices
-    rng = np.random.default_rng(42)
+        return vertices, faces
     faces_to_use = faces
-    if faces.shape[0] > max_points:
-        indices = rng.choice(faces.shape[0], size=max_points, replace=False)
+    if faces.shape[0] > max_faces:
+        rng = np.random.default_rng(42)
+        indices = rng.choice(faces.shape[0], size=max_faces, replace=False)
         faces_to_use = faces[indices]
-    samples_per_face = max(1, min(6, max_points // max(1, faces_to_use.shape[0])))
-    points = []
-    for face in faces_to_use:
-        v0, v1, v2 = vertices[face]
-        for _ in range(samples_per_face):
-            r1 = np.sqrt(rng.random())
-            r2 = rng.random()
-            point = (1 - r1) * v0 + r1 * (1 - r2) * v1 + r1 * r2 * v2
-            points.append(point)
-            if len(points) >= max_points:
-                break
-        if len(points) >= max_points:
-            break
-    return np.array(points)
+    unique_vertices, inverse = np.unique(faces_to_use.flatten(), return_inverse=True)
+    remapped_faces = inverse.reshape(-1, 3)
+    return vertices[unique_vertices], remapped_faces
+
+
+def render_stl_viewer(vertices: np.ndarray, faces: np.ndarray) -> None:
+    if faces.size == 0 or vertices.size == 0:
+        st.info("Impossible de générer l'aperçu 3D : STL sans faces.")
+        return
+    centered = vertices - vertices.mean(axis=0)
+    max_dim = np.max(np.ptp(centered, axis=0))
+    scale_factor = 100.0 / max_dim if max_dim > 0 else 1.0
+    scaled = centered * scale_factor
+
+    data = {
+        "vertices": scaled.tolist(),
+        "faces": faces.tolist(),
+    }
+    html = f"""
+    <div id="viewer" style="width:100%; height:520px;"></div>
+    <script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
+    <script src="https://unpkg.com/three@0.160.0/examples/js/controls/OrbitControls.js"></script>
+    <script>
+    const data = {json.dumps(data)};
+    const container = document.getElementById('viewer');
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x0c1118);
+    const camera = new THREE.PerspectiveCamera(45, container.clientWidth / container.clientHeight, 0.1, 2000);
+    camera.position.set(120, 120, 160);
+    const renderer = new THREE.WebGLRenderer({{ antialias: true }});
+    renderer.setSize(container.clientWidth, container.clientHeight);
+    container.appendChild(renderer.domElement);
+    const controls = new THREE.OrbitControls(camera, renderer.domElement);
+    controls.target.set(0, 0, 0);
+    controls.update();
+
+    const geometry = new THREE.BufferGeometry();
+    const vertices = new Float32Array(data.vertices.flat());
+    const indices = new Uint32Array(data.faces.flat());
+    geometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
+    geometry.setIndex(new THREE.BufferAttribute(indices, 1));
+    geometry.computeVertexNormals();
+
+    const material = new THREE.MeshStandardMaterial({{ color: 0x4aa3ff, metalness: 0.2, roughness: 0.35 }});
+    const mesh = new THREE.Mesh(geometry, material);
+    scene.add(mesh);
+
+    const light1 = new THREE.DirectionalLight(0xffffff, 0.9);
+    light1.position.set(1, 1, 1);
+    scene.add(light1);
+    const light2 = new THREE.AmbientLight(0xffffff, 0.4);
+    scene.add(light2);
+
+    function animate() {{
+        requestAnimationFrame(animate);
+        renderer.render(scene, camera);
+    }}
+    animate();
+
+    window.addEventListener('resize', () => {{
+        const width = container.clientWidth;
+        const height = container.clientHeight;
+        camera.aspect = width / height;
+        camera.updateProjectionMatrix();
+        renderer.setSize(width, height);
+    }});
+    </script>
+    """
+    components.html(html, height=520, scrolling=False)
 
 
 def build_pdf_bytes(analysis: str, recommendations: str, explanations: str) -> bytes:
@@ -291,6 +356,16 @@ with st.sidebar:
     st.header("STL")
     uploaded_file = st.file_uploader("Importer un fichier STL", type=["stl"])
     st.caption("Analyse locale : dimensions et nombre de triangles.")
+    profile_choice = st.selectbox(
+        "Profil d'impression",
+        options=["standard", "detailed", "fast"],
+        format_func=lambda v: {
+            "standard": "Standard (équilibré)",
+            "detailed": "Détaillé (qualité)",
+            "fast": "Rapide",
+        }[v],
+        help="Change la hauteur de couche et l'exposition selon la priorité.",
+    )
 
 stl_info = parse_stl(uploaded_file)
 
@@ -344,33 +419,10 @@ if stl_info:
         st.success("Le modèle tient dans le volume d'impression.", icon="✅")
 
     st.subheader("Aperçu 3D")
-    max_points = 25000
-    vertices = build_preview_points(stl_info.vertices, stl_info.faces, max_points=max_points)
-    center = stl_info.vertices.mean(axis=0)
-    max_dim = max(stl_info.bounds_mm)
-    scale_factor = 100.0 / max_dim if max_dim > 0 else 1.0
-    preview_vertices = (vertices - center) * scale_factor
-    points = [
-        {"x": float(x), "y": float(y), "z": float(z)}
-        for x, y, z in preview_vertices
-    ]
-    view_state = pdk.ViewState(
-        target=[0, 0, 0],
-        zoom=2.2,
-        rotation_orbit=35,
-        rotation_x=25,
+    preview_vertices, preview_faces = build_preview_mesh(
+        stl_info.vertices, stl_info.faces, max_faces=20000
     )
-    point_layer = pdk.Layer(
-        "ScatterplotLayer",
-        data=points,
-        get_position="[x, y, z]",
-        get_fill_color=[80, 180, 255, 220],
-        get_radius=1.6,
-        pickable=False,
-    )
-    view = pdk.View(type="OrbitView", controller=True)
-    deck = pdk.Deck(layers=[point_layer], initial_view_state=view_state, views=[view])
-    st.pydeck_chart(deck, width="stretch")
+    render_stl_viewer(preview_vertices, preview_faces)
 
     st.subheader("Orientation conseillée")
     orientation = suggest_orientation(stl_info.vertices)
@@ -385,7 +437,7 @@ if stl_info:
     )
 
     st.subheader("Analyse & recommandations")
-    recommendations = recommend_print_settings(stl_info.bounds_mm)
+    recommendations = recommend_print_settings(stl_info.bounds_mm, profile_choice)
     analysis_text, recommendation_text, explanation_text = build_analysis_text(
         stl_info, scale, recommendations
     )
