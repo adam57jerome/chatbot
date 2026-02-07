@@ -150,7 +150,7 @@ def build_analysis_text(stl_info: StlInfo, scale: float) -> Tuple[str, str]:
     return "\n".join(analysis_lines), "\n".join(recommendation_lines)
 
 
-def recommend_print_settings(bounds: Tuple[float, float, float]) -> Dict[str, str]:
+def recommend_print_settings(bounds: Tuple[float, float, float]) -> Dict[str, float | str]:
     x_dim, y_dim, z_dim = bounds
     max_dim = max(bounds)
     min_dim = min(bounds)
@@ -178,14 +178,38 @@ def recommend_print_settings(bounds: Tuple[float, float, float]) -> Dict[str, st
     raft_needed = min(x_dim, y_dim) < 25
 
     return {
-        "layer_height": f"{layer_height:.2f} mm",
-        "exposure": f"{exposure:.1f} s",
-        "bottom_exposure": f"{bottom_exposure:.1f} s",
-        "bottom_layers": str(bottom_layers),
-        "lift_distance": f"{lift_distance:.1f} mm",
+        "layer_height": layer_height,
+        "exposure": exposure,
+        "bottom_exposure": bottom_exposure,
+        "bottom_layers": bottom_layers,
+        "lift_distance": lift_distance,
         "supports": "Oui" if supports_needed else "Non",
         "raft": "Oui" if raft_needed else "Non",
     }
+
+
+def build_preview_points(vertices: np.ndarray, faces: np.ndarray, max_points: int = 40000) -> np.ndarray:
+    if faces.size == 0:
+        return vertices
+    rng = np.random.default_rng(42)
+    faces_to_use = faces
+    if faces.shape[0] > max_points:
+        indices = rng.choice(faces.shape[0], size=max_points, replace=False)
+        faces_to_use = faces[indices]
+    samples_per_face = max(1, min(6, max_points // max(1, faces_to_use.shape[0])))
+    points = []
+    for face in faces_to_use:
+        v0, v1, v2 = vertices[face]
+        for _ in range(samples_per_face):
+            r1 = np.sqrt(rng.random())
+            r2 = rng.random()
+            point = (1 - r1) * v0 + r1 * (1 - r2) * v1 + r1 * r2 * v2
+            points.append(point)
+            if len(points) >= max_points:
+                break
+        if len(points) >= max_points:
+            break
+    return np.array(points)
 
 
 def build_pdf_bytes(analysis: str, recommendations: str) -> bytes:
@@ -204,9 +228,33 @@ def build_pdf_bytes(analysis: str, recommendations: str) -> bytes:
     return pdf.output(dest="S").encode("latin1")
 
 
-st.set_page_config(page_title="Flashforge Foto 8.9 - Configurateur", layout="wide")
+st.set_page_config(page_title="ADAM PARM3D", layout="wide")
 
-st.title("🖨️ Configurateur Foto 8.9 (Résine)")
+st.markdown(
+    """
+    <style>
+    [data-testid="stAppViewContainer"] {
+        background: radial-gradient(circle at top, #1b2b3a 0%, #0c1118 60%);
+        color: #f5f7fa;
+    }
+    [data-testid="stSidebar"] {
+        background: linear-gradient(180deg, #111827 0%, #1f2937 100%);
+    }
+    .block-container {
+        padding-top: 2rem;
+    }
+    .stMetric {
+        background-color: #111827;
+        border-radius: 12px;
+        padding: 8px 12px;
+        border: 1px solid #1f2937;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
+st.title("🖨️ ADAM PARM3D")
 st.write(
     "Importez un STL et ajustez les paramètres de votre Flashforge Foto 8.9. "
     "Les valeurs proposées servent de base et peuvent être modifiées selon votre résine."
@@ -270,10 +318,7 @@ if stl_info:
 
     st.subheader("Aperçu 3D")
     max_points = 20000
-    vertices = stl_info.vertices
-    if vertices.shape[0] > max_points:
-        indices = np.linspace(0, vertices.shape[0] - 1, max_points).astype(int)
-        vertices = vertices[indices]
+    vertices = build_preview_points(stl_info.vertices, stl_info.faces, max_points=max_points)
     center = stl_info.vertices.mean(axis=0)
     max_dim = max(stl_info.bounds_mm)
     scale_factor = 100.0 / max_dim if max_dim > 0 else 1.0
@@ -297,7 +342,7 @@ if stl_info:
     )
     view = pdk.View(type="OrbitView", controller=True)
     deck = pdk.Deck(layers=[point_layer], initial_view_state=view_state, views=[view])
-    st.pydeck_chart(deck, use_container_width=True)
+    st.pydeck_chart(deck, width="stretch")
 
     st.subheader("Orientation conseillée")
     orientation = suggest_orientation(stl_info.vertices)
@@ -317,12 +362,20 @@ if stl_info:
     st.text_area("Recommandations", value=recommendation_text, height=120)
     st.subheader("Paramètres recommandés")
     recommendations = recommend_print_settings(stl_info.bounds_mm)
+    if st.session_state.get("last_stl") != stl_info.name:
+        profile.print_settings["layer_height"] = recommendations["layer_height"]
+        profile.print_settings["bottom_layers"] = recommendations["bottom_layers"]
+        profile.print_settings["exposure_time"] = recommendations["exposure"]
+        profile.print_settings["bottom_exposure"] = recommendations["bottom_exposure"]
+        profile.print_settings["lift_distance"] = recommendations["lift_distance"]
+        st.session_state.last_stl = stl_info.name
+        st.info("Paramètres recommandés appliqués à la pièce.")
     rec_col1, rec_col2, rec_col3 = st.columns(3)
-    rec_col1.metric("Hauteur de couche", recommendations["layer_height"])
-    rec_col1.metric("Exposition", recommendations["exposure"])
-    rec_col2.metric("Exposition base", recommendations["bottom_exposure"])
-    rec_col2.metric("Couches base", recommendations["bottom_layers"])
-    rec_col3.metric("Distance levage", recommendations["lift_distance"])
+    rec_col1.metric("Hauteur de couche", f"{recommendations['layer_height']:.2f} mm")
+    rec_col1.metric("Exposition", f"{recommendations['exposure']:.1f} s")
+    rec_col2.metric("Exposition base", f"{recommendations['bottom_exposure']:.1f} s")
+    rec_col2.metric("Couches base", str(recommendations["bottom_layers"]))
+    rec_col3.metric("Distance levage", f"{recommendations['lift_distance']:.1f} mm")
     rec_col3.metric("Supports nécessaires", recommendations["supports"])
     rec_col3.metric("Radeau nécessaire", recommendations["raft"])
     if importlib.util.find_spec("fpdf") is None:
@@ -344,96 +397,136 @@ with machine_tab:
     st.subheader("Machine")
     col1, col2 = st.columns(2)
     with col1:
-        st.caption("Par défaut : 3840 px")
         profile.machine["resolution_x"] = st.number_input(
-            "Résolution X (px)", value=profile.machine["resolution_x"], step=1.0
+            "Résolution X (px)",
+            value=profile.machine["resolution_x"],
+            step=1.0,
+            help="Valeur par défaut : 3840 px",
         )
-        st.caption("Par défaut : 2400 px")
         profile.machine["resolution_y"] = st.number_input(
-            "Résolution Y (px)", value=profile.machine["resolution_y"], step=1.0
+            "Résolution Y (px)",
+            value=profile.machine["resolution_y"],
+            step=1.0,
+            help="Valeur par défaut : 2400 px",
         )
     with col2:
-        st.caption("Par défaut : 192.0 mm")
         profile.machine["size_x"] = st.number_input(
-            "Taille X (mm)", value=profile.machine["size_x"], step=0.1
+            "Taille X (mm)",
+            value=profile.machine["size_x"],
+            step=0.1,
+            help="Valeur par défaut : 192.0 mm",
         )
-        st.caption("Par défaut : 120.0 mm")
         profile.machine["size_y"] = st.number_input(
-            "Taille Y (mm)", value=profile.machine["size_y"], step=0.1
+            "Taille Y (mm)",
+            value=profile.machine["size_y"],
+            step=0.1,
+            help="Valeur par défaut : 120.0 mm",
         )
-        st.caption("Par défaut : 200.0 mm")
         profile.machine["size_z"] = st.number_input(
-            "Taille Z (mm)", value=profile.machine["size_z"], step=0.1
+            "Taille Z (mm)",
+            value=profile.machine["size_z"],
+            step=0.1,
+            help="Valeur par défaut : 200.0 mm",
         )
 
 with resin_tab:
     st.subheader("Résine")
     col1, col2 = st.columns(2)
     with col1:
-        st.caption("Par défaut : standard")
-        profile.resin["type"] = st.text_input("Type de résine", value=profile.resin.get("type", "standard"))
-        st.caption("Par défaut : standard")
-        profile.resin["name"] = st.text_input("Nom de la résine", value=profile.resin.get("name", "standard"))
-    with col2:
-        st.caption("Par défaut : 1.10 g/ml")
-        profile.resin["density"] = st.number_input(
-            "Densité (g/ml)", value=profile.resin["density"], step=0.01
+        profile.resin["type"] = st.text_input(
+            "Type de résine",
+            value=profile.resin.get("type", "standard"),
+            help="Valeur par défaut : standard",
         )
-        st.caption("Par défaut : 30 €/kg")
+        profile.resin["name"] = st.text_input(
+            "Nom de la résine",
+            value=profile.resin.get("name", "standard"),
+            help="Valeur par défaut : standard",
+        )
+    with col2:
+        profile.resin["density"] = st.number_input(
+            "Densité (g/ml)",
+            value=profile.resin["density"],
+            step=0.01,
+            help="Valeur par défaut : 1.10 g/ml",
+        )
         profile.resin["cost_per_kg"] = st.number_input(
-            "Coût (€/kg)", value=profile.resin["cost_per_kg"], step=1.0
+            "Coût (€/kg)",
+            value=profile.resin["cost_per_kg"],
+            step=1.0,
+            help="Valeur par défaut : 30 €/kg",
         )
 
 with print_tab:
     st.subheader("Imprimer")
     col1, col2 = st.columns(2)
     with col1:
-        st.caption("Par défaut : 0.10 mm")
         profile.print_settings["layer_height"] = st.number_input(
-            "Hauteur de couche (mm)", value=profile.print_settings["layer_height"], step=0.01
+            "Hauteur de couche (mm)",
+            value=profile.print_settings["layer_height"],
+            step=0.01,
+            help="Valeur par défaut : 0.10 mm",
         )
-        st.caption("Par défaut : 8")
         profile.print_settings["bottom_layers"] = st.number_input(
-            "Couches inférieures", value=profile.print_settings["bottom_layers"], step=1
+            "Couches inférieures",
+            value=profile.print_settings["bottom_layers"],
+            step=1,
+            help="Valeur par défaut : 8",
         )
-        st.caption("Par défaut : 3.0 s")
         profile.print_settings["exposure_time"] = st.number_input(
-            "Durée d'exposition (s)", value=profile.print_settings["exposure_time"], step=0.1
+            "Durée d'exposition (s)",
+            value=profile.print_settings["exposure_time"],
+            step=0.1,
+            help="Valeur par défaut : 3.0 s",
         )
-        st.caption("Par défaut : 40.0 s")
         profile.print_settings["bottom_exposure"] = st.number_input(
-            "Durée exposition base (s)", value=profile.print_settings["bottom_exposure"], step=0.5
+            "Durée exposition base (s)",
+            value=profile.print_settings["bottom_exposure"],
+            step=0.5,
+            help="Valeur par défaut : 40.0 s",
         )
     with col2:
-        st.caption("Par défaut : 8.0 mm")
         profile.print_settings["lift_distance"] = st.number_input(
-            "Distance de levage (mm)", value=profile.print_settings["lift_distance"], step=0.1
+            "Distance de levage (mm)",
+            value=profile.print_settings["lift_distance"],
+            step=0.1,
+            help="Valeur par défaut : 8.0 mm",
         )
-        st.caption("Par défaut : 65 mm/min")
         profile.print_settings["lift_speed"] = st.number_input(
-            "Vitesse de levage (mm/min)", value=profile.print_settings["lift_speed"], step=1.0
+            "Vitesse de levage (mm/min)",
+            value=profile.print_settings["lift_speed"],
+            step=1.0,
+            help="Valeur par défaut : 65 mm/min",
         )
-        st.caption("Par défaut : 150 mm/min")
         profile.print_settings["retract_speed"] = st.number_input(
-            "Vitesse de rétraction (mm/min)", value=profile.print_settings["retract_speed"], step=1.0
+            "Vitesse de rétraction (mm/min)",
+            value=profile.print_settings["retract_speed"],
+            step=1.0,
+            help="Valeur par défaut : 150 mm/min",
         )
 
 with advanced_tab:
     st.subheader("Avancé")
     col1, col2 = st.columns(2)
     with col1:
-        st.caption("Par défaut : 255")
         profile.advanced["bottom_pwm"] = st.number_input(
-            "Éclairage base PWM", value=profile.advanced["bottom_pwm"], step=1
+            "Éclairage base PWM",
+            value=profile.advanced["bottom_pwm"],
+            step=1,
+            help="Valeur par défaut : 255",
         )
-        st.caption("Par défaut : 255")
         profile.advanced["normal_pwm"] = st.number_input(
-            "Éclairage PWM", value=profile.advanced["normal_pwm"], step=1
+            "Éclairage PWM",
+            value=profile.advanced["normal_pwm"],
+            step=1,
+            help="Valeur par défaut : 255",
         )
     with col2:
-        st.caption("Par défaut : 8")
         profile.advanced["gray_levels"] = st.number_input(
-            "Niveaux de gris", value=profile.advanced["gray_levels"], step=1
+            "Niveaux de gris",
+            value=profile.advanced["gray_levels"],
+            step=1,
+            help="Valeur par défaut : 8",
         )
 
 st.divider()
