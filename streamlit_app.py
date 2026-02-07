@@ -214,7 +214,7 @@ if stl_info:
         get_color="color",
         point_size=1,
     )
-    deck = pdk.Deck(layers=[point_layer], initial_view_state=view_state, map_style=None)
+    deck = pdk.Deck(layers=[point_layer], initial_view_state=view_state, map_style="")
     st.pydeck_chart(deck, use_container_width=True)
 
     st.subheader("Orientation conseillée")
@@ -237,19 +237,24 @@ with machine_tab:
     st.subheader("Machine")
     col1, col2 = st.columns(2)
     with col1:
+        st.caption("Par défaut : 3840 px")
         profile.machine["resolution_x"] = st.number_input(
             "Résolution X (px)", value=profile.machine["resolution_x"], step=1.0
         )
+        st.caption("Par défaut : 2400 px")
         profile.machine["resolution_y"] = st.number_input(
             "Résolution Y (px)", value=profile.machine["resolution_y"], step=1.0
         )
     with col2:
+        st.caption("Par défaut : 192.0 mm")
         profile.machine["size_x"] = st.number_input(
             "Taille X (mm)", value=profile.machine["size_x"], step=0.1
         )
+        st.caption("Par défaut : 120.0 mm")
         profile.machine["size_y"] = st.number_input(
             "Taille Y (mm)", value=profile.machine["size_y"], step=0.1
         )
+        st.caption("Par défaut : 200.0 mm")
         profile.machine["size_z"] = st.number_input(
             "Taille Z (mm)", value=profile.machine["size_z"], step=0.1
         )
@@ -258,12 +263,16 @@ with resin_tab:
     st.subheader("Résine")
     col1, col2 = st.columns(2)
     with col1:
+        st.caption("Par défaut : standard")
         profile.resin["type"] = st.text_input("Type de résine", value=profile.resin.get("type", "standard"))
+        st.caption("Par défaut : standard")
         profile.resin["name"] = st.text_input("Nom de la résine", value=profile.resin.get("name", "standard"))
     with col2:
+        st.caption("Par défaut : 1.10 g/ml")
         profile.resin["density"] = st.number_input(
             "Densité (g/ml)", value=profile.resin["density"], step=0.01
         )
+        st.caption("Par défaut : 30 €/kg")
         profile.resin["cost_per_kg"] = st.number_input(
             "Coût (€/kg)", value=profile.resin["cost_per_kg"], step=1.0
         )
@@ -272,25 +281,32 @@ with print_tab:
     st.subheader("Imprimer")
     col1, col2 = st.columns(2)
     with col1:
+        st.caption("Par défaut : 0.10 mm")
         profile.print_settings["layer_height"] = st.number_input(
             "Hauteur de couche (mm)", value=profile.print_settings["layer_height"], step=0.01
         )
+        st.caption("Par défaut : 8")
         profile.print_settings["bottom_layers"] = st.number_input(
             "Couches inférieures", value=profile.print_settings["bottom_layers"], step=1
         )
+        st.caption("Par défaut : 3.0 s")
         profile.print_settings["exposure_time"] = st.number_input(
             "Durée d'exposition (s)", value=profile.print_settings["exposure_time"], step=0.1
         )
+        st.caption("Par défaut : 40.0 s")
         profile.print_settings["bottom_exposure"] = st.number_input(
             "Durée exposition base (s)", value=profile.print_settings["bottom_exposure"], step=0.5
         )
     with col2:
+        st.caption("Par défaut : 8.0 mm")
         profile.print_settings["lift_distance"] = st.number_input(
             "Distance de levage (mm)", value=profile.print_settings["lift_distance"], step=0.1
         )
+        st.caption("Par défaut : 65 mm/min")
         profile.print_settings["lift_speed"] = st.number_input(
             "Vitesse de levage (mm/min)", value=profile.print_settings["lift_speed"], step=1.0
         )
+        st.caption("Par défaut : 150 mm/min")
         profile.print_settings["retract_speed"] = st.number_input(
             "Vitesse de rétraction (mm/min)", value=profile.print_settings["retract_speed"], step=1.0
         )
@@ -299,13 +315,16 @@ with advanced_tab:
     st.subheader("Avancé")
     col1, col2 = st.columns(2)
     with col1:
+        st.caption("Par défaut : 255")
         profile.advanced["bottom_pwm"] = st.number_input(
             "Éclairage base PWM", value=profile.advanced["bottom_pwm"], step=1
         )
+        st.caption("Par défaut : 255")
         profile.advanced["normal_pwm"] = st.number_input(
             "Éclairage PWM", value=profile.advanced["normal_pwm"], step=1
         )
     with col2:
+        st.caption("Par défaut : 8")
         profile.advanced["gray_levels"] = st.number_input(
             "Niveaux de gris", value=profile.advanced["gray_levels"], step=1
         )
