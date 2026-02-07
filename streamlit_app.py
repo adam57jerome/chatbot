@@ -1,3 +1,4 @@
+import importlib.util
 import json
 from dataclasses import asdict, dataclass
 from typing import Dict, Optional, Tuple
@@ -5,7 +6,6 @@ from typing import Dict, Optional, Tuple
 import numpy as np
 import pydeck as pdk
 import streamlit as st
-from fpdf import FPDF
 
 
 @dataclass
@@ -151,6 +151,8 @@ def build_analysis_text(stl_info: StlInfo, scale: float) -> Tuple[str, str]:
 
 
 def build_pdf_bytes(analysis: str, recommendations: str) -> bytes:
+    from fpdf import FPDF
+
     pdf = FPDF()
     pdf.add_page()
     pdf.set_font("Helvetica", size=12)
@@ -240,10 +242,10 @@ if stl_info:
     ]
     center = stl_info.vertices.mean(axis=0)
     view_state = pdk.ViewState(
-        latitude=float(center[1]),
-        longitude=float(center[0]),
+        target=[float(center[0]), float(center[1]), float(center[2])],
         zoom=1.5,
-        pitch=45,
+        rotation_orbit=45,
+        rotation_x=30,
     )
     point_layer = pdk.Layer(
         "PointCloudLayer",
@@ -252,7 +254,8 @@ if stl_info:
         get_color="color",
         point_size=1,
     )
-    deck = pdk.Deck(layers=[point_layer], initial_view_state=view_state, map_style="")
+    view = pdk.View(type="OrbitView", controller=True)
+    deck = pdk.Deck(layers=[point_layer], initial_view_state=view_state, views=[view])
     st.pydeck_chart(deck, use_container_width=True)
 
     st.subheader("Orientation conseillée")
@@ -271,13 +274,16 @@ if stl_info:
     analysis_text, recommendation_text = build_analysis_text(stl_info, scale)
     st.text_area("Analyse de la pièce", value=analysis_text, height=140)
     st.text_area("Recommandations", value=recommendation_text, height=120)
-    pdf_bytes = build_pdf_bytes(analysis_text, recommendation_text)
-    st.download_button(
-        "Télécharger le rapport PDF",
-        data=pdf_bytes,
-        file_name="rapport_stl_foto89.pdf",
-        mime="application/pdf",
-    )
+    if importlib.util.find_spec("fpdf") is None:
+        st.info("Installation requise pour le PDF : `pip install fpdf2`.")
+    else:
+        pdf_bytes = build_pdf_bytes(analysis_text, recommendation_text)
+        st.download_button(
+            "Télécharger le rapport PDF",
+            data=pdf_bytes,
+            file_name="rapport_stl_foto89.pdf",
+            mime="application/pdf",
+        )
 
 st.divider()
 
