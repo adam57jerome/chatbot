@@ -1,11 +1,11 @@
 import importlib.util
 import json
 from dataclasses import asdict, dataclass
-from typing import Dict, Optional, Tuple
+from io import BytesIO
+from typing import Any, Dict, Optional, Tuple
 
 import numpy as np
 import streamlit as st
-import streamlit.components.v1 as components
 
 
 @dataclass
@@ -356,85 +356,45 @@ def recommend_print_settings(
     }
 
 
-def build_preview_mesh(
-    vertices: np.ndarray, faces: np.ndarray, max_faces: int = 20000
-) -> Tuple[np.ndarray, np.ndarray]:
-    if faces.size == 0:
-        return vertices, faces
-    faces_to_use = faces
-    if faces.shape[0] > max_faces:
-        rng = np.random.default_rng(42)
-        indices = rng.choice(faces.shape[0], size=max_faces, replace=False)
-        faces_to_use = faces[indices]
-    unique_vertices, inverse = np.unique(faces_to_use.flatten(), return_inverse=True)
-    remapped_faces = inverse.reshape(-1, 3)
-    return vertices[unique_vertices], remapped_faces
+@st.cache_data(show_spinner=False)
+def load_stl_mesh(data: bytes) -> Any:
+    import trimesh
+
+    mesh = trimesh.load(BytesIO(data), file_type="stl", force="mesh")
+    if isinstance(mesh, trimesh.Scene):
+        parts = mesh.dump()
+        mesh = trimesh.util.concatenate(tuple(parts))
+    mesh.remove_duplicate_faces()
+    mesh.remove_degenerate_faces()
+    mesh.remove_unreferenced_vertices()
+    mesh.process(validate=True)
+    return mesh
 
 
-def render_stl_viewer(vertices: np.ndarray, faces: np.ndarray) -> None:
-    if faces.size == 0 or vertices.size == 0:
+def render_stl_viewer(mesh: Any) -> None:
+    import plotly.graph_objects as go
+
+    vertices = mesh.vertices
+    faces = mesh.faces
+    if vertices.size == 0 or faces.size == 0:
         st.info("Impossible de générer l'aperçu 3D : STL sans faces.")
         return
-    centered = vertices - vertices.mean(axis=0)
-    max_dim = np.max(np.ptp(centered, axis=0))
-    scale_factor = 100.0 / max_dim if max_dim > 0 else 1.0
-    scaled = centered * scale_factor
-
-    data = {
-        "vertices": scaled.tolist(),
-        "faces": faces.tolist(),
-    }
-    html = f"""
-    <div id="viewer" style="width:100%; height:520px;"></div>
-    <script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
-    <script src="https://unpkg.com/three@0.160.0/examples/js/controls/OrbitControls.js"></script>
-    <script>
-    const data = {json.dumps(data)};
-    const container = document.getElementById('viewer');
-    const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x0c1118);
-    const camera = new THREE.PerspectiveCamera(45, container.clientWidth / container.clientHeight, 0.1, 2000);
-    camera.position.set(120, 120, 160);
-    const renderer = new THREE.WebGLRenderer({{ antialias: true }});
-    renderer.setSize(container.clientWidth, container.clientHeight);
-    container.appendChild(renderer.domElement);
-    const controls = new THREE.OrbitControls(camera, renderer.domElement);
-    controls.target.set(0, 0, 0);
-    controls.update();
-
-    const geometry = new THREE.BufferGeometry();
-    const vertices = new Float32Array(data.vertices.flat());
-    const indices = new Uint32Array(data.faces.flat());
-    geometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
-    geometry.setIndex(new THREE.BufferAttribute(indices, 1));
-    geometry.computeVertexNormals();
-
-    const material = new THREE.MeshStandardMaterial({{ color: 0x4aa3ff, metalness: 0.2, roughness: 0.35 }});
-    const mesh = new THREE.Mesh(geometry, material);
-    scene.add(mesh);
-
-    const light1 = new THREE.DirectionalLight(0xffffff, 0.9);
-    light1.position.set(1, 1, 1);
-    scene.add(light1);
-    const light2 = new THREE.AmbientLight(0xffffff, 0.4);
-    scene.add(light2);
-
-    function animate() {{
-        requestAnimationFrame(animate);
-        renderer.render(scene, camera);
-    }}
-    animate();
-
-    window.addEventListener('resize', () => {{
-        const width = container.clientWidth;
-        const height = container.clientHeight;
-        camera.aspect = width / height;
-        camera.updateProjectionMatrix();
-        renderer.setSize(width, height);
-    }});
-    </script>
-    """
-    components.html(html, height=520, scrolling=False)
+    fig = go.Figure(
+        data=[
+            go.Mesh3d(
+                x=vertices[:, 0],
+                y=vertices[:, 1],
+                z=vertices[:, 2],
+                i=faces[:, 0],
+                j=faces[:, 1],
+                k=faces[:, 2],
+                color="rgb(74,163,255)",
+                opacity=1.0,
+            )
+        ]
+    )
+    fig.update_layout(scene_aspectmode="data", margin=dict(l=0, r=0, t=0, b=0))
+    st.plotly_chart(fig, width="stretch")
 
 
 def build_pdf_bytes(analysis: str, recommendations: str, explanations: str) -> bytes:
@@ -612,10 +572,21 @@ if stl_info:
         st.success("Le modèle tient dans le volume d'impression.", icon="✅")
 
     st.subheader("Aperçu 3D")
-    preview_vertices, preview_faces = build_preview_mesh(
-        stl_info.vertices, stl_info.faces, max_faces=20000
-    )
-    render_stl_viewer(preview_vertices, preview_faces)
+    if importlib.util.find_spec("trimesh") is None or importlib.util.find_spec("plotly") is None:
+        st.info("Aperçu 3D indisponible : installez `trimesh` et `plotly`.")
+    else:
+        try:
+            mesh = load_stl_mesh(uploaded_file.getvalue())
+        except Exception:
+            mesh = None
+        if mesh is None:
+            st.info("Impossible de charger le STL pour l'aperçu 3D.")
+        else:
+            if len(mesh.faces) > 250_000:
+                st.warning(
+                    "STL très lourd : l’affichage peut ramer. Simplifie le STL si besoin."
+                )
+            render_stl_viewer(mesh)
 
     st.subheader("Orientation conseillée")
     orientation = suggest_orientation(stl_info.vertices)
