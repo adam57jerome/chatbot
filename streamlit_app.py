@@ -379,22 +379,31 @@ def render_stl_viewer(mesh: Any) -> None:
     if vertices.size == 0 or faces.size == 0:
         st.info("Impossible de générer l'aperçu 3D : STL sans faces.")
         return
-    fig = go.Figure(
-        data=[
-            go.Mesh3d(
-                x=vertices[:, 0],
-                y=vertices[:, 1],
-                z=vertices[:, 2],
-                i=faces[:, 0],
-                j=faces[:, 1],
-                k=faces[:, 2],
-                color="rgb(74,163,255)",
-                opacity=1.0,
-            )
-        ]
+    fig = go.Figure()
+    fig.add_trace(
+        go.Mesh3d(
+            x=vertices[:, 0],
+            y=vertices[:, 1],
+            z=vertices[:, 2],
+            i=faces[:, 0],
+            j=faces[:, 1],
+            k=faces[:, 2],
+            color="rgb(74,163,255)",
+            opacity=1.0,
+            flatshading=True,
+        )
     )
-    fig.update_layout(scene_aspectmode="data", margin=dict(l=0, r=0, t=0, b=0))
-    st.plotly_chart(fig, width="stretch")
+    fig.update_layout(
+        scene_aspectmode="data",
+        margin=dict(l=0, r=0, t=0, b=0),
+        scene=dict(
+            bgcolor="rgba(0,0,0,0)",
+            xaxis=dict(showbackground=False, visible=False),
+            yaxis=dict(showbackground=False, visible=False),
+            zaxis=dict(showbackground=False, visible=False),
+        ),
+    )
+    st.plotly_chart(fig, use_container_width=True)
 
 
 def build_pdf_bytes(analysis: str, recommendations: str, explanations: str) -> bytes:
@@ -575,18 +584,29 @@ if stl_info:
     if importlib.util.find_spec("trimesh") is None or importlib.util.find_spec("plotly") is None:
         st.info("Aperçu 3D indisponible : installez `trimesh` et `plotly`.")
     else:
+        debug = st.expander("Debug aperçu 3D", expanded=False)
+        debug.write(
+            "Si l'aperçu ne s'affiche pas, vérifiez les dépendances, la taille du STL "
+            "et si le navigateur autorise WebGL."
+        )
         try:
             mesh = load_stl_mesh(uploaded_file.getvalue())
-        except Exception:
+        except Exception as exc:
+            debug.error(f"Erreur chargement STL : {exc}")
             mesh = None
         if mesh is None:
             st.info("Impossible de charger le STL pour l'aperçu 3D.")
         else:
+            debug.write(f"Sommets : {len(mesh.vertices):,} | Faces : {len(mesh.faces):,}")
             if len(mesh.faces) > 250_000:
                 st.warning(
                     "STL très lourd : l’affichage peut ramer. Simplifie le STL si besoin."
                 )
-            render_stl_viewer(mesh)
+            try:
+                render_stl_viewer(mesh)
+            except Exception as exc:
+                debug.error(f"Erreur affichage 3D : {exc}")
+                st.info("Impossible d'afficher le STL dans la vue 3D.")
 
     st.subheader("Orientation conseillée")
     orientation = suggest_orientation(stl_info.vertices)
