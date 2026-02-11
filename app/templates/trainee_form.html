@@ -1,0 +1,35 @@
+{% extends 'base.html' %}
+{% block title %}{% if trainee and trainee.id %}Modifier{% else %}Nouveau{% endif %} stagiaire{% endblock %}
+{% block content %}
+<h2>{% if trainee and trainee.id %}Modifier{% else %}Nouveau{% endif %} stagiaire</h2>
+<form method="post">
+  <label>Nom*
+    <input name="nom" value="{{ trainee.nom if trainee else '' }}" required />
+    {% if errors.nom %}<small class="error">{{ errors.nom }}</small>{% endif %}
+  </label>
+  <label>Prénom*
+    <input name="prenom" value="{{ trainee.prenom if trainee else '' }}" required />
+    {% if errors.prenom %}<small class="error">{{ errors.prenom }}</small>{% endif %}
+  </label>
+  <label>Email
+    <input name="email" type="email" value="{{ trainee.email if trainee else '' }}" />
+    {% if errors.email %}<small class="error">{{ errors.email }}</small>{% endif %}
+  </label>
+  <label>Téléphone
+    <input name="telephone" value="{{ trainee.telephone if trainee else '' }}" />
+  </label>
+  <label>Section
+    <select name="section_id">
+      <option value="">Aucune</option>
+      {% for section in sections %}
+        <option value="{{ section.id }}" {% if trainee and trainee.section_id == section.id %}selected{% endif %}>{{ section.code }} - {{ section.nom }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>Notes
+    <textarea name="notes">{{ trainee.notes if trainee else '' }}</textarea>
+  </label>
+  <button class="btn" type="submit">Enregistrer</button>
+  <a href="/stagiaires">Annuler</a>
+</form>
+{% endblock %}

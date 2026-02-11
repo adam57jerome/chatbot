@@ -1,0 +1,15 @@
+{% extends 'base.html' %}
+{% block title %}Détail stagiaire{% endblock %}
+{% block content %}
+<h2>{{ trainee.prenom }} {{ trainee.nom }}</h2>
+<ul>
+  <li>Email: {{ trainee.email or '-' }}</li>
+  <li>Téléphone: {{ trainee.telephone or '-' }}</li>
+  <li>Section: {% if trainee.section %}<a href="/sections/{{ trainee.section.id }}">{{ trainee.section.code }} - {{ trainee.section.nom }}</a>{% else %}Aucune{% endif %}</li>
+  <li>Notes: {{ trainee.notes or '-' }}</li>
+</ul>
+<a class="btn" href="/stagiaires/{{ trainee.id }}/edit">Modifier</a>
+<form method="post" action="/stagiaires/{{ trainee.id }}/delete" onsubmit="return confirm('Supprimer ce stagiaire ?');">
+  <button class="btn danger" type="submit">Supprimer</button>
+</form>
+{% endblock %}
