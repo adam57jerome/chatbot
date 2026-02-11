@@ -82,3 +82,6 @@ Tests inclus:
 ## Aide
 Le contenu de l’aide se trouve dans:
 - `src/help/help.md`
+
+## Dépannage seed
+Si un seed échoue (ex: crash au démarrage), supprimez `data/questionnaire.db` puis relancez l’application pour reconstruire la base proprement.
