@@ -52,6 +52,7 @@ Le cœur métier s'appuie sur des `dataclasses` :
 - Recalcul des scores (normalisation : trim/lower/suppression espaces multiples)
 - Réponses vides : score 0 + compteur par stagiaire
 - Export Excel recalculé + CSV synthèse
+- Gestion des cellules fusionnées : écriture sur la cellule ancre (haut-gauche) pour éviter les erreurs openpyxl
 
 ### 2) Mode Saisie manuelle
 - Saisie de la **section**

@@ -38,3 +38,26 @@ def normalize_answer(value: object) -> str:
         return ""
     text = str(value).strip().lower()
     return " ".join(text.split())
+
+
+def safe_set_value(ws, row: int, col: int, value: object) -> None:
+    cell = ws.cell(row=row, column=col)
+    is_merged_cell = cell.__class__.__name__ == "MergedCell"
+
+    if is_merged_cell:
+        for merged_range in ws.merged_cells.ranges:
+            if row in range(merged_range.min_row, merged_range.max_row + 1) and col in range(
+                merged_range.min_col, merged_range.max_col + 1
+            ):
+                ws.cell(row=merged_range.min_row, column=merged_range.min_col, value=value)
+                return
+
+        try:
+            ws.cell(row=row, column=col, value=value)
+            return
+        except AttributeError as exc:
+            raise ValueError(
+                f"Impossible d'écrire la valeur en ({row}, {col}) : cellule fusionnée sans ancre détectée"
+            ) from exc
+
+    ws.cell(row=row, column=col, value=value)
