@@ -8,11 +8,13 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QKeySequence, QAction, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
+    QButtonGroup,
     QCheckBox,
     QComboBox,
     QDialog,
     QFileDialog,
     QFormLayout,
+    QGroupBox,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -21,6 +23,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QPlainTextEdit,
+    QRadioButton,
     QTableWidget,
     QTableWidgetItem,
     QTabWidget,
@@ -65,8 +68,13 @@ class ExcelImportDialog(QDialog):
         super().__init__(parent)
         self.db = db
         self.preview = None
+        self._section_checks: dict[str, QCheckBox] = {}
+        self._trainee_answer_checks: dict[str, QCheckBox] = {}
+        self._trainee_new_checks: dict[str, QCheckBox] = {}
+        self._trainee_existing_state: dict[str, bool] = {}
+
         self.setWindowTitle("Importer Excel")
-        self.resize(780, 560)
+        self.resize(980, 760)
 
         layout = QVBoxLayout(self)
 
@@ -80,17 +88,52 @@ class ExcelImportDialog(QDialog):
 
         form = QFormLayout()
         self.questionnaire_name = QLineEdit()
+        self.questionnaire_name.textChanged.connect(self.refresh_preview_tables)
+
         self.session_combo = QComboBox()
+        self.session_combo.currentIndexChanged.connect(self.refresh_preview_tables)
+
         self.import_answers_cb = QCheckBox("Importer les réponses existantes des stagiaires")
         self.import_answers_cb.setChecked(True)
+        self.import_new_trainees_cb = QCheckBox("Importer les nouveaux stagiaires")
+        self.import_new_trainees_cb.setChecked(True)
 
         form.addRow("Questionnaire", self.questionnaire_name)
         form.addRow("Session", self.session_combo)
         form.addRow("", self.import_answers_cb)
+        form.addRow("", self.import_new_trainees_cb)
         layout.addLayout(form)
+
+        q_conflict_box = QGroupBox("Conflit questionnaire (si même nom)")
+        q_conflict_layout = QVBoxLayout(q_conflict_box)
+        self.q_conflict_label = QLabel("Aucun conflit détecté pour le moment.")
+        q_conflict_layout.addWidget(self.q_conflict_label)
+
+        self.q_conflict_group = QButtonGroup(self)
+        self.q_cancel_radio = QRadioButton("Ne pas importer ce questionnaire (annuler)")
+        self.q_copy_radio = QRadioButton("Importer en créant une copie")
+        self.q_copy_radio.setChecked(True)
+        self.q_conflict_group.addButton(self.q_cancel_radio)
+        self.q_conflict_group.addButton(self.q_copy_radio)
+        q_conflict_layout.addWidget(self.q_cancel_radio)
+        q_conflict_layout.addWidget(self.q_copy_radio)
+        layout.addWidget(q_conflict_box)
+
+        self.sections_table = QTableWidget(0, 4)
+        self.sections_table.setHorizontalHeaderLabels(["Section", "Nb questions", "État", "Importer"])
+        layout.addWidget(self.sections_table)
+
+        self.trainees_table = QTableWidget(0, 4)
+        self.trainees_table.setHorizontalHeaderLabels(["Stagiaire", "État", "Utiliser réponses", "Importer nouveau"])
+        layout.addWidget(self.trainees_table)
 
         self.summary = QTextBrowser()
         layout.addWidget(self.summary)
+
+        self.log_box = QPlainTextEdit()
+        self.log_box.setReadOnly(True)
+        self.log_box.setPlaceholderText("Journal / Diagnostics")
+        layout.addWidget(self.log_box)
 
         action_row = QHBoxLayout()
         launch_btn = QPushButton("Lancer l'import")
@@ -103,12 +146,39 @@ class ExcelImportDialog(QDialog):
 
         self.reload_sessions()
 
+    def _append_log(self, text: str) -> None:
+        self.log_box.appendPlainText(text)
+
     def reload_sessions(self) -> None:
         self.session_combo.clear()
         self.session_combo.addItem("Créer session depuis nom du fichier", "__auto__")
         sessions = self.db.scalars(select(CohortSession).order_by(CohortSession.code)).all()
         for s in sessions:
             self.session_combo.addItem(f"{s.code} - {s.label}", s.code)
+
+    def _target_questionnaire_exists(self) -> tuple[bool, set[str]]:
+        name = self.questionnaire_name.text().strip()
+        if not name:
+            return False, set()
+        q = self.db.scalar(select(Questionnaire).where(Questionnaire.name == name).limit(1))
+        if not q:
+            return False, set()
+        sections = self.db.scalars(select(Section).where(Section.questionnaire_id == q.id)).all()
+        return True, {s.name for s in sections}
+
+    def _session_code(self) -> str:
+        code = self.session_combo.currentData()
+        if code == "__auto__" and self.preview is not None:
+            return Path(self.preview.source_path).stem.upper().replace(" ", "_")[:30]
+        return code or "AUTO"
+
+    def _existing_trainees_in_session(self) -> set[str]:
+        code = self._session_code()
+        session = self.db.scalar(select(CohortSession).where(CohortSession.code == code).limit(1))
+        if not session:
+            return set()
+        rows = self.db.scalars(select(Trainee).where(Trainee.session_id == session.id)).all()
+        return {f"{r.nom} {r.prenom}".strip() for r in rows}
 
     def choose_file(self) -> None:
         path, _ = QFileDialog.getOpenFileName(self, "Sélectionner fichier Excel", "", "Excel (*.xlsx)")
@@ -122,11 +192,60 @@ class ExcelImportDialog(QDialog):
 
         self.file_label.setText(path)
         self.questionnaire_name.setText(self.preview.questionnaire_name)
+        self.refresh_preview_tables()
+
+    def refresh_preview_tables(self) -> None:
+        if self.preview is None:
+            return
+
+        q_exists, existing_sections = self._target_questionnaire_exists()
+        self.q_conflict_label.setText(
+            f"Le questionnaire '{self.questionnaire_name.text().strip()}' existe déjà. Que voulez-vous faire ?"
+            if q_exists
+            else "Aucun questionnaire existant avec ce nom."
+        )
+
+        self.sections_table.setRowCount(0)
+        self._section_checks.clear()
+        for i, section in enumerate(self.preview.sections_data):
+            self.sections_table.insertRow(i)
+            self.sections_table.setItem(i, 0, QTableWidgetItem(section.name))
+            self.sections_table.setItem(i, 1, QTableWidgetItem(str(len(section.questions))))
+            state = "EXISTE" if section.name in existing_sections else "NOUVELLE"
+            self.sections_table.setItem(i, 2, QTableWidgetItem(state))
+            cb = QCheckBox()
+            cb.setChecked(state == "NOUVELLE")
+            self.sections_table.setCellWidget(i, 3, cb)
+            self._section_checks[section.name] = cb
+
+        existing_trainees = self._existing_trainees_in_session()
+        self.trainees_table.setRowCount(0)
+        self._trainee_answer_checks.clear()
+        self._trainee_new_checks.clear()
+        self._trainee_existing_state.clear()
+        for i, trainee in enumerate(self.preview.trainees):
+            self.trainees_table.insertRow(i)
+            self.trainees_table.setItem(i, 0, QTableWidgetItem(trainee))
+            is_existing = trainee in existing_trainees
+            self._trainee_existing_state[trainee] = is_existing
+            self.trainees_table.setItem(i, 1, QTableWidgetItem("EXISTE" if is_existing else "NOUVEAU"))
+
+            resp_cb = QCheckBox()
+            resp_cb.setChecked(True)
+            self.trainees_table.setCellWidget(i, 2, resp_cb)
+            self._trainee_answer_checks[trainee] = resp_cb
+
+            new_cb = QCheckBox()
+            new_cb.setChecked(not is_existing)
+            new_cb.setEnabled(not is_existing)
+            self.trainees_table.setCellWidget(i, 3, new_cb)
+            self._trainee_new_checks[trainee] = new_cb
+
         trainee_list = "<br/>".join(self.preview.trainees) if self.preview.trainees else "(aucun stagiaire détecté)"
-        sections = "<br/>".join(self.preview.section_names)
+        sections_html = "<br/>".join(f"{s.name}: {len(s.questions)} questions" for s in self.preview.sections_data)
         self.summary.setHtml(
-            f"<b>Questionnaire proposé:</b> {self.preview.questionnaire_name}<br/>"
-            f"<b>Sections détectées:</b> {len(self.preview.section_names)}<br/>{sections}<br/><br/>"
+            f"<b>Questionnaire proposé:</b> {self.questionnaire_name.text().strip() or self.preview.questionnaire_name}<br/>"
+            f"<b>Sections détectées:</b> {len(self.preview.section_names)}<br/>{sections_html}<br/><br/>"
             f"<b>Questions totales:</b> {self.preview.total_questions}<br/>"
             f"<b>Stagiaires détectés:</b> {len(self.preview.trainees)}<br/>{trainee_list}"
         )
@@ -137,29 +256,67 @@ class ExcelImportDialog(QDialog):
             return
 
         q_name = self.questionnaire_name.text().strip() or self.preview.questionnaire_name
-        session_code = self.session_combo.currentData()
-        if session_code == "__auto__":
-            session_code = Path(self.preview.source_path).stem.upper().replace(" ", "_")[:30]
+        session_code = self._session_code()
 
+        q_exists, _existing_sections = self._target_questionnaire_exists()
+        strategy = "copy"
+        if q_exists and self.q_cancel_radio.isChecked():
+            QMessageBox.information(self, "Import Excel", f"Import annulé: questionnaire '{q_name}' déjà existant.")
+            return
+        if q_exists:
+            strategy = "copy"
+
+        selected_sections = {name for name, cb in self._section_checks.items() if cb.isChecked()}
+        selected_trainees_for_answers = {name for name, cb in self._trainee_answer_checks.items() if cb.isChecked()}
+        selected_new_trainees = {
+            name
+            for name, cb in self._trainee_new_checks.items()
+            if cb.isEnabled() and cb.isChecked()
+        }
+
+        estimated_responses = 0
+        for sec in self.preview.sections_data:
+            if sec.name in selected_sections:
+                estimated_responses += len(sec.questions) * len(selected_trainees_for_answers)
+
+        ok = QMessageBox.question(
+            self,
+            "Confirmer import",
+            f"Vous allez importer: {len(selected_sections)} sections, "
+            f"{len(selected_trainees_for_answers)} stagiaires, {estimated_responses} réponses. Continuer ?",
+        )
+        if ok != QMessageBox.StandardButton.Yes:
+            return
+
+        self._append_log("--- Début import Excel ---")
         try:
-            questionnaire, session, warnings = import_excel_to_db(
+            questionnaire, session, warnings, diagnostics = import_excel_to_db(
                 self.db,
                 self.preview,
                 questionnaire_name=q_name,
                 session_code=session_code,
                 import_answers=self.import_answers_cb.isChecked(),
+                questionnaire_strategy=strategy,
+                selected_sections=selected_sections,
+                selected_trainees_for_answers=selected_trainees_for_answers,
+                import_new_trainees=self.import_new_trainees_cb.isChecked(),
+                selected_new_trainees=selected_new_trainees,
             )
         except Exception as exc:
+            self._append_log(f"ERREUR: {exc}")
             QMessageBox.critical(self, "Import Excel", f"Erreur pendant l'import: {exc}")
             return
+
+        for line in diagnostics:
+            self._append_log(line)
+        for warning in warnings:
+            self._append_log(f"WARNING: {warning}")
 
         QMessageBox.information(
             self,
             "Import terminé",
             f"Questionnaire créé: {questionnaire.name}\nSession: {session.code}",
         )
-        if warnings:
-            QMessageBox.warning(self, "Import Excel", "Warnings détectés:\n- " + "\n- ".join(warnings[:20]))
         self.accept()
 
 

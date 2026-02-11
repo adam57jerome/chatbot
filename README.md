@@ -40,6 +40,7 @@ Au premier lancement, un seed est injecté automatiquement:
   - import rapide de stagiaires (copier/coller)
   - ajout de questions en bloc (`1=a`, `2=c`, ...)
   - import Excel `.xlsx` (questionnaire + sections + questions + stagiaires + réponses + scores recalculés)
+  - gestion des conflits import: questionnaire existant (annuler/copie), sections existantes (ignorer), stagiaires existants (réutiliser)
 - **Section**:
   - workflow Session → Questionnaire → Section → Stagiaire
   - grille `Numero | Bonne réponse | Réponse saisie | Score`
@@ -86,3 +87,10 @@ Le contenu de l’aide se trouve dans:
 
 ## Dépannage seed
 Si un seed échoue (ex: crash au démarrage), supprimez `data/questionnaire.db` puis relancez l’application pour reconstruire la base proprement.
+
+
+## Lancer sous Windows (run.bat)
+```bat
+run.bat
+```
+Le script crée/active `.venv`, installe les dépendances puis lance `app.py` et garde la console ouverte.

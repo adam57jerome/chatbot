@@ -42,12 +42,17 @@ def test_excel_import_with_answers_and_scores(db_session, tmp_path: Path):
     _build_fixture(xlsx)
 
     preview = parse_excel_preview(str(xlsx))
-    questionnaire, session, _warnings = import_excel_to_db(
+    questionnaire, session, _warnings, _diagnostics = import_excel_to_db(
         db_session,
         preview,
         questionnaire_name="Import Test",
         session_code="S-IMP",
         import_answers=True,
+        questionnaire_strategy="copy",
+        selected_sections={"Lecture de plan"},
+        selected_trainees_for_answers={"Dupont Alice", "Durand Bob"},
+        import_new_trainees=True,
+        selected_new_trainees={"Dupont Alice", "Durand Bob"},
     )
 
     assert questionnaire.name.startswith("Import Test")
