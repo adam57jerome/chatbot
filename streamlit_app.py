@@ -366,7 +366,7 @@ def render_settings_page() -> None:
 init_db()
 
 with st.sidebar:
-    st.image(logo_path, width=95)
+    st.image(logo_path)
     st.markdown("## Navigation")
     st.caption("Gestion stagiaires / sections")
     st.session_state.auto_collapse_sidebar = st.checkbox(
