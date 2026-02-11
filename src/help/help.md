@@ -53,3 +53,11 @@ Le raccourci **F1** ouvre cette aide contextuelle à tout moment.
 - Vérifier le résumé.
 - Cliquer **Rattacher** pour créer/mettre à jour l’affectation de session.
 - Cliquer **Commencer la saisie**.
+
+## Passations (Entrée / Mi-parcours / Sortie)
+Une **passation** permet de refaire le même questionnaire plus tard pour la même session.
+
+- Sélectionnez la passation dans la barre du haut.
+- Utilisez **Créer une nouvelle passation** (onglet Section ou Admin).
+- Option **Dupliquer les réponses de la passation précédente** pour préremplir puis recalculer les scores.
+- Dans l’onglet **Comparaison passations**, comparez A vs B (écarts par section).

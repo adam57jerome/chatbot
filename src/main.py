@@ -37,18 +37,19 @@ from sqlalchemy import select
 
 from .database import SessionLocal, initialize_database
 from .assignment_service import can_start_saisie, get_assigned_questionnaire_id
+from .attempt_service import compare_attempts_section_delta, create_attempt, list_attempts, save_answer_for_attempt
 from .excel_importer import parse_excel_preview
 from .import_service import import_excel_to_db
-from .models import Question, Questionnaire, Section, Session as CohortSession, Trainee
+from .models import Answer, Question, Questionnaire, Section, Session as CohortSession, Trainee
 from .ui.wizard_setup import SetupWizardDialog
+from .ui.create_attempt_dialog import CreateAttemptDialog
+from .ui.comparison_view import AttemptComparisonView
 from .services import (
     color_for_score,
     ensure_seed_data,
     export_chatgpt_payload,
-    get_or_create_attempt,
     group_synthesis,
     parse_question_block,
-    save_answer,
     section_stats_for_attempt,
 )
 
@@ -336,6 +337,8 @@ class MainWindow(QMainWindow):
         self.session_combo = QComboBox()
         self.questionnaire_combo = QComboBox()
         self.reference_label = QLabel("Référence: -")
+        self.attempt_combo = QComboBox()
+        self.attempt_combo.setToolTip("Passation active")
         self.session_combo.setToolTip("Choisir la session active")
         self.questionnaire_combo.setToolTip("Choisir le questionnaire")
 
@@ -343,6 +346,8 @@ class MainWindow(QMainWindow):
         topbar.addWidget(self.session_combo)
         topbar.addWidget(QLabel("Questionnaire"))
         topbar.addWidget(self.questionnaire_combo)
+        topbar.addWidget(QLabel("Passation"))
+        topbar.addWidget(self.attempt_combo)
         topbar.addWidget(self.reference_label)
 
         root.addLayout(topbar)
@@ -356,7 +361,7 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(self._build_section_tab(), "Section")
         self.tabs.addTab(self._build_trainee_tab(), "Stagiaire")
         self.tabs.addTab(self._build_synthesis_tab(), "Synthèse groupe")
-        self.tabs.addTab(self._build_compare_tab(), "Comparatifs sections")
+        self.tabs.addTab(self._build_compare_tab(), "Comparaison passations")
         self.tabs.addTab(self._build_admin_tab(), "Admin")
         self.tabs.addTab(self._build_help_tab(), "Aide")
         body.addWidget(self.tabs, 4)
@@ -371,6 +376,8 @@ class MainWindow(QMainWindow):
         self.questionnaire_combo.currentIndexChanged.connect(self.refresh_all_views)
         self.section_list.currentRowChanged.connect(self.refresh_section_grid)
         self.trainee_combo.currentIndexChanged.connect(self.refresh_section_grid)
+        self.attempt_combo.currentIndexChanged.connect(self.refresh_section_grid)
+        self.attempt_combo.currentIndexChanged.connect(self.refresh_compare_attempts)
 
         self.load_top_filters()
 
@@ -410,9 +417,13 @@ class MainWindow(QMainWindow):
         clear_btn.clicked.connect(self.clear_grid)
         copy_btn = QPushButton("Copier données pour ChatGPT")
         copy_btn.clicked.connect(self.copy_chatgpt)
+        create_attempt_btn = QPushButton("Créer une nouvelle passation")
+        create_attempt_btn.setToolTip("Créer une passation Entrée/Sortie et la sélectionner")
+        create_attempt_btn.clicked.connect(self.create_new_attempt)
         buttons.addWidget(save_btn)
         buttons.addWidget(clear_btn)
         buttons.addWidget(copy_btn)
+        buttons.addWidget(create_attempt_btn)
         layout.addLayout(buttons)
 
         self.section_total = QLabel("Total: 0 | Note /20: 0")
@@ -446,9 +457,10 @@ class MainWindow(QMainWindow):
     def _build_compare_tab(self) -> QWidget:
         widget = QWidget()
         layout = QVBoxLayout(widget)
-        self.compare_table = QTableWidget(0, 3)
-        self.compare_table.setHorizontalHeaderLabels(["Section", "Moyenne groupe", "Écart référence"])
-        layout.addWidget(self.compare_table)
+        self.compare_view = AttemptComparisonView()
+        self.compare_view.combo_a.currentIndexChanged.connect(self.refresh_compare_attempts)
+        self.compare_view.combo_b.currentIndexChanged.connect(self.refresh_compare_attempts)
+        layout.addWidget(self.compare_view)
         export_sec_btn = QPushButton("Exporter notes par section (CSV)")
         export_sec_btn.clicked.connect(self.export_section_csv)
         layout.addWidget(export_sec_btn)
@@ -497,6 +509,10 @@ class MainWindow(QMainWindow):
         excel_btn.setToolTip("Importer questionnaire, sections, questions, stagiaires et réponses depuis un .xlsx")
         excel_btn.clicked.connect(self.open_excel_import)
         layout.addWidget(excel_btn)
+
+        new_attempt_admin_btn = QPushButton("Créer une nouvelle passation")
+        new_attempt_admin_btn.clicked.connect(self.create_new_attempt)
+        layout.addWidget(new_attempt_admin_btn)
 
         wizard_btn = QPushButton("Nouveau parcours…")
         wizard_btn.setToolTip("Process guidé: Sections -> Stagiaires -> Rattacher questionnaire")
@@ -570,11 +586,27 @@ class MainWindow(QMainWindow):
         for t in trainees:
             self.trainee_combo.addItem(f"{t.nom} {t.prenom}", t.id)
 
+        self.attempt_combo.clear()
+        attempts = list_attempts(self.db, sid, qid)
+        if not attempts:
+            self.attempt_combo.addItem("Aucune passation", None)
+        for a in attempts:
+            self.attempt_combo.addItem(f"{a.label or 'Passation'} - {a.created_at:%Y-%m-%d}", a.id)
+
+        self.compare_view.combo_a.clear()
+        self.compare_view.combo_b.clear()
+        for a in attempts:
+            label = f"{a.label or 'Passation'} - {a.created_at:%Y-%m-%d}"
+            self.compare_view.combo_a.addItem(label, a.id)
+            self.compare_view.combo_b.addItem(label, a.id)
+        if len(attempts) > 1:
+            self.compare_view.combo_b.setCurrentIndex(1)
+
         if sections:
             self.section_list.setCurrentRow(0)
 
         self.refresh_synthesis()
-        self.refresh_compare()
+        self.refresh_compare_attempts()
 
     def get_current_section(self) -> Section | None:
         qid = self.current_questionnaire_id()
@@ -590,26 +622,26 @@ class MainWindow(QMainWindow):
         sid = self.current_session_id()
         qid = self.current_questionnaire_id()
         tid = self.trainee_combo.currentData()
+        aid = self.attempt_combo.currentData()
         section = self.get_current_section()
         if sid and not can_start_saisie(self.db, sid):
             self.grid.setRowCount(0)
             self.section_total.setText("Aucun questionnaire rattaché à cette session. Ouvrir l'assistant.")
             self.section_total.setStyleSheet("color: #c62828; font-weight: bold;")
             return
-        if not all([sid, qid, tid, section]):
+        if not all([sid, qid, tid, section, aid]):
             return
 
-        attempt = get_or_create_attempt(self.db, sid, qid, tid)
         questions = self.db.scalars(select(Question).where(Question.section_id == section.id).order_by(Question.numero)).all()
         self.grid.setRowCount(len(questions))
         for i, q in enumerate(questions):
             self.grid.setItem(i, 0, QTableWidgetItem(str(q.numero)))
-            self.grid.setItem(i, 1, QTableWidgetItem(q.bonne_reponse))
-            existing = next((a for a in attempt.answers if a.question_id == q.id), None)
+            self.grid.setItem(i, 1, QTableWidgetItem(q.bonne_reponse or ""))
+            existing = self.db.scalar(select(Answer).where(Answer.attempt_id == aid, Answer.trainee_id == tid, Answer.question_id == q.id).limit(1))
             self.grid.setItem(i, 2, QTableWidgetItem(existing.reponse_texte if existing else ""))
             self.grid.setItem(i, 3, QTableWidgetItem(str(existing.score if existing else 0)))
 
-        stats = section_stats_for_attempt(self.db, attempt.id, section.id)
+        stats = section_stats_for_attempt(self.db, aid, section.id, tid)
         color = color_for_score(stats.note_sur_20, self.db.get(Questionnaire, qid).reference_score_20)
         self.section_total.setText(f"Total: {stats.total_points} | Note /20: {stats.note_sur_20}")
         self.section_total.setStyleSheet(f"color: {color}; font-weight: bold;")
@@ -619,14 +651,14 @@ class MainWindow(QMainWindow):
         sid = self.current_session_id()
         qid = self.current_questionnaire_id()
         tid = self.trainee_combo.currentData()
+        aid = self.attempt_combo.currentData()
         section = self.get_current_section()
-        if not all([sid, qid, tid, section]):
+        if not all([sid, qid, tid, section, aid]):
             return
-        attempt = get_or_create_attempt(self.db, sid, qid, tid)
         questions = self.db.scalars(select(Question).where(Question.section_id == section.id).order_by(Question.numero)).all()
         for i, q in enumerate(questions):
             response = self.grid.item(i, 2).text() if self.grid.item(i, 2) else ""
-            answer = save_answer(self.db, attempt.id, q.id, response, q.bonne_reponse)
+            answer = save_answer_for_attempt(self.db, aid, tid, q.id, response, q.bonne_reponse)
             self.grid.setItem(i, 3, QTableWidgetItem(str(answer.score)))
         self.refresh_section_grid()
 
@@ -649,7 +681,9 @@ class MainWindow(QMainWindow):
         tid = self.trainee_combo.currentData()
         if not all([sid, qid, tid]):
             return
-        attempt = get_or_create_attempt(self.db, sid, qid, tid)
+        aid = self.attempt_combo.currentData()
+        if not aid:
+            return
         sections = self.db.scalars(select(Section).where(Section.questionnaire_id == qid).order_by(Section.ordre)).all()
         questionnaire = self.db.get(Questionnaire, qid)
 
@@ -657,7 +691,7 @@ class MainWindow(QMainWindow):
         names, vals = [], []
         weak = []
         for i, sec in enumerate(sections):
-            st = section_stats_for_attempt(self.db, attempt.id, sec.id)
+            st = section_stats_for_attempt(self.db, aid, sec.id, tid)
             names.append(sec.name)
             vals.append(st.note_sur_20)
             if st.note_sur_20 < questionnaire.reference_score_20:
@@ -692,19 +726,40 @@ class MainWindow(QMainWindow):
             self.synthesis_table.setItem(i, 1, QTableWidgetItem(str(row["global_note"])))
             self.synthesis_table.setItem(i, 2, QTableWidgetItem(str(pct)))
 
-    def refresh_compare(self) -> None:
+    def refresh_compare_attempts(self) -> None:
+        qid = self.current_questionnaire_id()
+        aid_a = self.compare_view.combo_a.currentData()
+        aid_b = self.compare_view.combo_b.currentData()
+        if not all([qid, aid_a, aid_b]):
+            self.compare_view.set_section_deltas({})
+            return
+        deltas = compare_attempts_section_delta(self.db, aid_a, aid_b, qid)
+        self.compare_view.set_section_deltas(deltas)
+
+    def create_new_attempt(self) -> None:
         sid = self.current_session_id()
         qid = self.current_questionnaire_id()
         if not all([sid, qid]):
+            QMessageBox.warning(self, "Passation", "Sélectionnez une session et un questionnaire.")
             return
-        synth = group_synthesis(self.db, sid, qid)
-        ref = self.db.get(Questionnaire, qid).reference_score_20
-        stats = sorted(synth["section_stats"].items(), key=lambda x: x[1]["mean"], reverse=True)
-        self.compare_table.setRowCount(len(stats))
-        for i, (name, s) in enumerate(stats):
-            self.compare_table.setItem(i, 0, QTableWidgetItem(name))
-            self.compare_table.setItem(i, 1, QTableWidgetItem(str(s["mean"])))
-            self.compare_table.setItem(i, 2, QTableWidgetItem(str(round(s["mean"] - ref, 2))))
+        dialog = CreateAttemptDialog(self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        label, date_value, duplicate = dialog.values()
+        attempts = list_attempts(self.db, sid, qid)
+        source = attempts[0].id if (duplicate and attempts) else None
+        created = create_attempt(
+            self.db,
+            session_id=sid,
+            questionnaire_id=qid,
+            label=label,
+            created_at=date_value,
+            duplicate_from_attempt_id=source,
+        )
+        self.load_top_filters()
+        idx = self.attempt_combo.findData(created.id)
+        if idx >= 0:
+            self.attempt_combo.setCurrentIndex(idx)
 
     def create_questionnaire(self) -> None:
         name = self.admin_q_name.text().strip()

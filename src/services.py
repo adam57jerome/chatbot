@@ -104,27 +104,39 @@ class SectionResult:
     note_sur_20: float
 
 
-def get_or_create_attempt(db: Session, session_id: int, questionnaire_id: int, trainee_id: int) -> Attempt:
-    stmt = select(Attempt).where(
-        Attempt.session_id == session_id,
-        Attempt.questionnaire_id == questionnaire_id,
-        Attempt.trainee_id == trainee_id,
+def get_or_create_attempt(db: Session, session_id: int, questionnaire_id: int, trainee_id: int | None = None) -> Attempt:
+    # trainee_id kept for backward compatibility (attempt is now per session+questionnaire)
+    attempt = db.scalar(
+        select(Attempt)
+        .where(Attempt.session_id == session_id, Attempt.questionnaire_id == questionnaire_id, Attempt.active.is_(True))
+        .order_by(Attempt.created_at.desc())
+        .limit(1)
     )
-    attempt = db.scalar(stmt)
     if attempt:
         return attempt
-    attempt = Attempt(session_id=session_id, questionnaire_id=questionnaire_id, trainee_id=trainee_id)
+    attempt = Attempt(session_id=session_id, questionnaire_id=questionnaire_id, label="Passation", active=True)
     db.add(attempt)
     db.commit()
     db.refresh(attempt)
     return attempt
 
 
-def save_answer(db: Session, attempt_id: int, question_id: int, response: str | None, expected: str) -> Answer:
-    answer = db.scalar(select(Answer).where(Answer.attempt_id == attempt_id, Answer.question_id == question_id))
+def save_answer(
+    db: Session,
+    attempt_id: int,
+    question_id: int,
+    response: str | None,
+    expected: str | None,
+    trainee_id: int | None = None,
+) -> Answer:
+    if trainee_id is None:
+        raise ValueError("trainee_id requis pour save_answer")
+    answer = db.scalar(
+        select(Answer).where(Answer.attempt_id == attempt_id, Answer.trainee_id == trainee_id, Answer.question_id == question_id)
+    )
     scored = score_answer(response, expected)
     if answer is None:
-        answer = Answer(attempt_id=attempt_id, question_id=question_id, reponse_texte=response or "", score=scored)
+        answer = Answer(attempt_id=attempt_id, trainee_id=trainee_id, question_id=question_id, reponse_texte=response or "", score=scored)
         db.add(answer)
     else:
         answer.reponse_texte = response or ""
@@ -134,13 +146,16 @@ def save_answer(db: Session, attempt_id: int, question_id: int, response: str | 
     return answer
 
 
-def section_stats_for_attempt(db: Session, attempt_id: int, section_id: int) -> SectionResult:
+def section_stats_for_attempt(db: Session, attempt_id: int, section_id: int, trainee_id: int | None = None) -> SectionResult:
     questions = db.scalars(select(Question).where(Question.section_id == section_id).order_by(Question.numero)).all()
     q_ids = [q.id for q in questions]
     if not questions:
         return SectionResult("", 0, 0, 0.0)
 
-    answers = db.scalars(select(Answer).where(Answer.attempt_id == attempt_id, Answer.question_id.in_(q_ids))).all()
+    stmt = select(Answer).where(Answer.attempt_id == attempt_id, Answer.question_id.in_(q_ids))
+    if trainee_id is not None:
+        stmt = stmt.where(Answer.trainee_id == trainee_id)
+    answers = db.scalars(stmt).all()
     score_map = {a.question_id: a.score for a in answers}
     total = sum(score_map.get(q.id, 0) for q in questions)
     note = (20 / len(questions)) * total
@@ -163,11 +178,19 @@ def group_synthesis(db: Session, session_id: int, questionnaire_id: int) -> dict
     trainees_stats = []
     section_bucket: dict[str, list[float]] = {s.name: [] for s in sections}
 
+    attempt = db.scalar(
+        select(Attempt)
+        .where(Attempt.session_id == session_id, Attempt.questionnaire_id == questionnaire_id, Attempt.active.is_(True))
+        .order_by(Attempt.created_at.desc())
+        .limit(1)
+    )
+    if attempt is None:
+        attempt = get_or_create_attempt(db, session_id, questionnaire_id)
+
     for trainee in trainees:
-        attempt = get_or_create_attempt(db, session_id, questionnaire_id, trainee.id)
         sec_notes = {}
         for sec in sections:
-            note = section_stats_for_attempt(db, attempt.id, sec.id).note_sur_20
+            note = section_stats_for_attempt(db, attempt.id, sec.id, trainee.id).note_sur_20
             sec_notes[sec.name] = note
             section_bucket[sec.name].append(note)
         global_note = round(mean(sec_notes.values()), 2) if sec_notes else 0.0

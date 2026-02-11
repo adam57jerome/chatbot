@@ -58,17 +58,17 @@ def _get_trainee(db: Session, session_id: int, full_name: str) -> Trainee | None
     )
 
 
-def _get_or_create_attempt(db: Session, session_id: int, questionnaire_id: int, trainee_id: int) -> Attempt:
+def _get_or_create_attempt(db: Session, session_id: int, questionnaire_id: int) -> Attempt:
     attempt = db.scalar(
         select(Attempt).where(
             Attempt.session_id == session_id,
             Attempt.questionnaire_id == questionnaire_id,
-            Attempt.trainee_id == trainee_id,
-        ).limit(1)
+            Attempt.active.is_(True),
+        ).order_by(Attempt.created_at.desc()).limit(1)
     )
     if attempt:
         return attempt
-    attempt = Attempt(session_id=session_id, questionnaire_id=questionnaire_id, trainee_id=trainee_id)
+    attempt = Attempt(session_id=session_id, questionnaire_id=questionnaire_id, label="Import", active=True)
     db.add(attempt)
     db.flush()
     return attempt
@@ -153,7 +153,7 @@ def import_excel_to_db(
                 else:
                     diagnostics.append(f"Stagiaire existant réutilisé: {trainee_name}")
 
-                attempt = _get_or_create_attempt(db, session.id, questionnaire.id, trainee.id)
+                attempt = _get_or_create_attempt(db, session.id, questionnaire.id)
 
                 for section_data in preview.sections_data:
                     if section_data.name not in selected_sections:

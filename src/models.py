@@ -77,24 +77,25 @@ class Trainee(Base):
 
 class Attempt(Base):
     __tablename__ = "attempts"
-    __table_args__ = (UniqueConstraint("session_id", "questionnaire_id", "trainee_id", name="uq_attempt"),)
+    
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     session_id: Mapped[int] = mapped_column(ForeignKey("sessions.id", ondelete="CASCADE"), nullable=False)
     questionnaire_id: Mapped[int] = mapped_column(ForeignKey("questionnaires.id", ondelete="CASCADE"), nullable=False)
-    trainee_id: Mapped[int] = mapped_column(ForeignKey("trainees.id", ondelete="CASCADE"), nullable=False)
     label: Mapped[str | None] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
 
     answers = relationship("Answer", back_populates="attempt", cascade="all, delete-orphan")
 
 
 class Answer(Base):
     __tablename__ = "answers"
-    __table_args__ = (UniqueConstraint("attempt_id", "question_id", name="uq_answer_attempt_question"),)
+    __table_args__ = (UniqueConstraint("attempt_id", "trainee_id", "question_id", name="uq_answer_attempt_trainee_question"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     attempt_id: Mapped[int] = mapped_column(ForeignKey("attempts.id", ondelete="CASCADE"), nullable=False)
+    trainee_id: Mapped[int] = mapped_column(ForeignKey("trainees.id", ondelete="CASCADE"), nullable=False)
     question_id: Mapped[int] = mapped_column(ForeignKey("questions.id", ondelete="CASCADE"), nullable=False)
     reponse_texte: Mapped[str | None] = mapped_column(String(100), nullable=True)
     score: Mapped[int] = mapped_column(Integer, default=0)

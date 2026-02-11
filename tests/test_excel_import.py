@@ -71,7 +71,6 @@ def test_excel_import_with_answers_and_scores(db_session, tmp_path: Path):
         select(Attempt).where(
             Attempt.session_id == session.id,
             Attempt.questionnaire_id == questionnaire.id,
-            Attempt.trainee_id == trainee.id,
         )
     )
     a_q2 = db_session.scalar(select(Answer).where(Answer.attempt_id == attempt.id, Answer.question_id == q2.id))
