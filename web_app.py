@@ -7,7 +7,7 @@ import pandas as pd
 import streamlit as st
 from sqlalchemy import select
 
-from src.database import Base, SessionLocal, engine
+from src.database import SessionLocal, initialize_database
 from src.excel_importer import parse_excel_preview
 from src.import_service import import_excel_to_db
 from src.models import Answer, Question, Questionnaire, Section, Session as CohortSession, Trainee
@@ -28,7 +28,7 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-Base.metadata.create_all(engine)
+initialize_database()
 with SessionLocal() as seed_db:
     ensure_seed_data(seed_db)
 

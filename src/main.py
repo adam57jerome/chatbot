@@ -35,7 +35,7 @@ from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 from sqlalchemy import select
 
-from .database import Base, SessionLocal, engine
+from .database import SessionLocal, initialize_database
 from .excel_importer import parse_excel_preview
 from .import_service import import_excel_to_db
 from .models import Question, Questionnaire, Section, Session as CohortSession, Trainee
@@ -762,7 +762,7 @@ class MainWindow(QMainWindow):
 
 
 def main() -> None:
-    Base.metadata.create_all(engine)
+    initialize_database()
     with SessionLocal() as db:
         ensure_seed_data(db)
 
