@@ -2,6 +2,8 @@
 
 Projet complet **100% local** pour gérer des stagiaires et leur affectation à des sections de formation.
 
+> ✅ Cette application fonctionne entièrement en local et **ne nécessite aucune clé API** (OpenAI, cloud, ou autre service externe).
+
 ## Stack
 - Backend: FastAPI
 - ORM: SQLAlchemy 2.x
