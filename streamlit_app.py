@@ -15,24 +15,38 @@ from app.schemas import SectionCreate, SectionUpdate, StagiaireCreate, Stagiaire
 
 T = TypeVar("T")
 
-st.set_page_config(page_title="Gestion des stagiaires", layout="wide")
-logo_path = "app/static/logo_acces_vii.svg"
-head_left, head_right = st.columns([1, 6])
-with head_left:
-    st.image(logo_path, width=110)
-with head_right:
-    st.title("Gestion des stagiaires (Streamlit)")
-    st.caption("Application locale, sans clé API.")
+# Sidebar state must be set before page config for each rerun.
+if "sidebar_state" not in st.session_state:
+    st.session_state.sidebar_state = "expanded"
 
-init_db()
-db_path = get_sqlite_db_path()
-if db_path:
-    st.caption(f"SQLite utilisé: {db_path}")
+st.set_page_config(
+    page_title="Gestion Stagiaires",
+    layout="wide",
+    initial_sidebar_state=st.session_state.sidebar_state,
+)
+
+logo_path = "app/static/logo_acces_vii.svg"
 
 st.session_state.setdefault("trainee_screen", "list")
 st.session_state.setdefault("edit_trainee_id", None)
 st.session_state.setdefault("section_screen", "list")
 st.session_state.setdefault("edit_section_id", None)
+st.session_state.setdefault("page", "Stagiaires")
+st.session_state.setdefault("auto_collapse_sidebar", False)
+
+
+def toggle_sidebar_state() -> None:
+    st.session_state.sidebar_state = (
+        "collapsed" if st.session_state.sidebar_state == "expanded" else "expanded"
+    )
+
+
+def navigate_to(page_name: str) -> None:
+    page_changed = st.session_state.page != page_name
+    st.session_state.page = page_name
+    if page_changed and st.session_state.auto_collapse_sidebar:
+        st.session_state.sidebar_state = "collapsed"
+    st.rerun()
 
 
 def safe_query(action: Callable[[], T]) -> T:
@@ -150,8 +164,16 @@ def render_section_form(*, db, mode: str, section: Section | None = None) -> Non
         has_date_debut = c1.checkbox("Renseigner date début", value=section.date_debut is not None if section else False)
         has_date_fin = c2.checkbox("Renseigner date fin", value=section.date_fin is not None if section else False)
 
-        date_debut = c1.date_input("Date début", value=section.date_debut or date.today() if section else date.today(), disabled=not has_date_debut)
-        date_fin = c2.date_input("Date fin", value=section.date_fin or date.today() if section else date.today(), disabled=not has_date_fin)
+        date_debut = c1.date_input(
+            "Date début",
+            value=section.date_debut or date.today() if section else date.today(),
+            disabled=not has_date_debut,
+        )
+        date_fin = c2.date_input(
+            "Date fin",
+            value=section.date_fin or date.today() if section else date.today(),
+            disabled=not has_date_fin,
+        )
 
         description = st.text_area("Description", value=section.description or "" if section else "")
 
@@ -243,98 +265,149 @@ def render_section_assignments(db, section_id: int) -> None:
             st.rerun()
 
 
-col_a, col_b = st.columns([1, 2])
-with col_a:
+def render_trainees_page(db) -> None:
+    st.subheader("Stagiaires")
+    top_left, top_right = st.columns([2, 1])
+    q = top_left.text_input("Recherche (nom/prénom/email)", key="q")
+    if top_right.button("➕ Nouveau stagiaire"):
+        set_trainee_screen("create")
+        st.rerun()
+
+    trainees = load_trainees(db, q)
+    sections = load_sections(db)
+
+    if st.session_state.trainee_screen == "edit":
+        trainee = crud.get_trainee_by_id(db, st.session_state.edit_trainee_id)
+        render_trainee_form(db=db, mode="edit", sections=sections, trainee=trainee)
+    elif st.session_state.trainee_screen == "create":
+        render_trainee_form(db=db, mode="create", sections=sections)
+
+    st.markdown("### Liste")
+    if trainees:
+        header = st.columns([1.2, 1.2, 2.2, 1.4, 1.8, 1])
+        header[0].markdown("**Nom**")
+        header[1].markdown("**Prénom**")
+        header[2].markdown("**Email**")
+        header[3].markdown("**Téléphone**")
+        header[4].markdown("**Section**")
+        header[5].markdown("**Action**")
+        for trainee in trainees:
+            cols = st.columns([1.2, 1.2, 2.2, 1.4, 1.8, 1])
+            cols[0].write(trainee.nom)
+            cols[1].write(trainee.prenom)
+            cols[2].write(trainee.email or "-")
+            cols[3].write(trainee.telephone or "-")
+            cols[4].write(trainee.section.code if trainee.section else "Aucune section")
+            if cols[5].button("✏️ Modifier", key=f"edit_trainee_{trainee.id}"):
+                set_trainee_screen("edit", trainee.id)
+                st.rerun()
+    else:
+        st.info("Aucun stagiaire trouvé.")
+
+
+def render_sections_page(db) -> None:
+    st.subheader("Sections")
+    search_col, add_col = st.columns([2, 1])
+    q_section = search_col.text_input("Recherche section (code/nom)", key="q_section")
+    if add_col.button("➕ Nouvelle section"):
+        set_section_screen("create")
+        st.rerun()
+
+    sections = load_sections(db)
+    if q_section:
+        q_filter = q_section.strip().lower()
+        sections = [s for s in sections if q_filter in s.code.lower() or q_filter in s.nom.lower()]
+
+    if st.session_state.section_screen == "edit":
+        section = crud.get_section_by_id(db, st.session_state.edit_section_id)
+        render_section_form(db=db, mode="edit", section=section)
+        if section:
+            render_section_assignments(db, section.id)
+    elif st.session_state.section_screen == "create":
+        render_section_form(db=db, mode="create")
+
+    st.markdown("### Liste des sections")
+    if sections:
+        header = st.columns([0.9, 1.5, 2, 1.2, 1.2, 1.2, 1])
+        header[0].markdown("**ID**")
+        header[1].markdown("**Code**")
+        header[2].markdown("**Nom**")
+        header[3].markdown("**Début**")
+        header[4].markdown("**Fin**")
+        header[5].markdown("**Stagiaires**")
+        header[6].markdown("**Action**")
+        for section in sections:
+            row = st.columns([0.9, 1.5, 2, 1.2, 1.2, 1.2, 1])
+            row[0].write(section.id)
+            row[1].write(section.code)
+            row[2].write(section.nom)
+            row[3].write(section.date_debut or "-")
+            row[4].write(section.date_fin or "-")
+            row[5].write(len(section.stagiaires))
+            if row[6].button("✏️ Modifier", key=f"edit_section_{section.id}"):
+                set_section_screen("edit", section.id)
+                st.rerun()
+    else:
+        st.info("Aucune section.")
+
+
+def render_settings_page() -> None:
+    st.subheader("Paramètres")
+    st.write("Panneau de configuration de l'application Streamlit.")
+    db_path = get_sqlite_db_path()
+    if db_path:
+        st.code(db_path, language="text")
     if st.button("Initialiser la base"):
         init_db()
         st.success("Base initialisée (tables créées si nécessaire).")
-with col_b:
-    st.info("Si la base est vide, les tables sont créées automatiquement au démarrage.")
 
 
-tab1, tab2 = st.tabs(["Stagiaires", "Sections"])
+# Init DB early for both pages
+init_db()
+
+with st.sidebar:
+    st.image(logo_path, width=95)
+    st.markdown("## Navigation")
+    st.caption("Gestion stagiaires / sections")
+    st.session_state.auto_collapse_sidebar = st.checkbox(
+        "Auto-rétracter après navigation",
+        value=st.session_state.auto_collapse_sidebar,
+    )
+
+    selected_page = st.radio(
+        "Aller vers",
+        options=["Stagiaires", "Sections", "Paramètres"],
+        index=["Stagiaires", "Sections", "Paramètres"].index(st.session_state.page),
+        key="sidebar_page_selector",
+    )
+    if selected_page != st.session_state.page:
+        navigate_to(selected_page)
+
+st.markdown(
+    """
+    <style>
+      .main-menu-row { margin: 0.25rem 0 1rem 0; }
+      .main-menu-hint { color: #6b7280; font-size: 0.9rem; margin-top: 0.25rem; }
+      section[data-testid="stSidebar"] .stRadio > div { gap: 0.4rem; }
+      section[data-testid="stSidebar"] .stRadio label { font-weight: 600; }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
+menu_col, title_col = st.columns([1, 8])
+with menu_col:
+    if st.button("☰ Menu", use_container_width=True):
+        toggle_sidebar_state()
+        st.rerun()
+with title_col:
+    st.title("Gestion des stagiaires (Streamlit)")
+    st.caption("Application locale, sans clé API.")
 
 with SessionLocal() as db:
-    with tab1:
-        st.subheader("Stagiaires")
-        top_left, top_right = st.columns([2, 1])
-        q = top_left.text_input("Recherche (nom/prénom/email)", key="q")
-        if top_right.button("➕ Nouveau stagiaire"):
-            set_trainee_screen("create")
-            st.rerun()
-
-        trainees = load_trainees(db, q)
-        sections = load_sections(db)
-
-        if st.session_state.trainee_screen == "edit":
-            trainee = crud.get_trainee_by_id(db, st.session_state.edit_trainee_id)
-            render_trainee_form(db=db, mode="edit", sections=sections, trainee=trainee)
-        elif st.session_state.trainee_screen == "create":
-            render_trainee_form(db=db, mode="create", sections=sections)
-
-        st.markdown("### Liste")
-        if trainees:
-            header = st.columns([1.2, 1.2, 2.2, 1.4, 1.8, 1])
-            header[0].markdown("**Nom**")
-            header[1].markdown("**Prénom**")
-            header[2].markdown("**Email**")
-            header[3].markdown("**Téléphone**")
-            header[4].markdown("**Section**")
-            header[5].markdown("**Action**")
-            for trainee in trainees:
-                cols = st.columns([1.2, 1.2, 2.2, 1.4, 1.8, 1])
-                cols[0].write(trainee.nom)
-                cols[1].write(trainee.prenom)
-                cols[2].write(trainee.email or "-")
-                cols[3].write(trainee.telephone or "-")
-                cols[4].write(trainee.section.code if trainee.section else "Aucune section")
-                if cols[5].button("✏️ Modifier", key=f"edit_trainee_{trainee.id}"):
-                    set_trainee_screen("edit", trainee.id)
-                    st.rerun()
-        else:
-            st.info("Aucun stagiaire trouvé.")
-
-    with tab2:
-        st.subheader("Sections")
-        search_col, add_col = st.columns([2, 1])
-        q_section = search_col.text_input("Recherche section (code/nom)", key="q_section")
-        if add_col.button("➕ Nouvelle section"):
-            set_section_screen("create")
-            st.rerun()
-
-        sections = load_sections(db)
-        if q_section:
-            q_filter = q_section.strip().lower()
-            sections = [s for s in sections if q_filter in s.code.lower() or q_filter in s.nom.lower()]
-
-        if st.session_state.section_screen == "edit":
-            section = crud.get_section_by_id(db, st.session_state.edit_section_id)
-            render_section_form(db=db, mode="edit", section=section)
-            if section:
-                render_section_assignments(db, section.id)
-        elif st.session_state.section_screen == "create":
-            render_section_form(db=db, mode="create")
-
-        st.markdown("### Liste des sections")
-        if sections:
-            header = st.columns([0.9, 1.5, 2, 1.2, 1.2, 1.2, 1])
-            header[0].markdown("**ID**")
-            header[1].markdown("**Code**")
-            header[2].markdown("**Nom**")
-            header[3].markdown("**Début**")
-            header[4].markdown("**Fin**")
-            header[5].markdown("**Stagiaires**")
-            header[6].markdown("**Action**")
-            for section in sections:
-                row = st.columns([0.9, 1.5, 2, 1.2, 1.2, 1.2, 1])
-                row[0].write(section.id)
-                row[1].write(section.code)
-                row[2].write(section.nom)
-                row[3].write(section.date_debut or "-")
-                row[4].write(section.date_fin or "-")
-                row[5].write(len(section.stagiaires))
-                if row[6].button("✏️ Modifier", key=f"edit_section_{section.id}"):
-                    set_section_screen("edit", section.id)
-                    st.rerun()
-        else:
-            st.info("Aucune section.")
+    if st.session_state.page == "Stagiaires":
+        render_trainees_page(db)
+    elif st.session_state.page == "Sections":
+        render_sections_page(db)
+    else:
+        render_settings_page()
