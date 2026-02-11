@@ -1,19 +1,84 @@
-# 💬 Chatbot template
+# Questionnaire AC Desktop (PySide6 + SQLite)
 
-A simple Streamlit app that shows how to build a chatbot using OpenAI's GPT-3.5.
+Application Windows Desktop pour la gestion de questionnaires d’entrée:
+- saisie manuelle des réponses,
+- analyses par section et par stagiaire,
+- comparatifs de groupe,
+- aide intégrée (menu + F1),
+- export CSV et copie JSON pour ChatGPT.
 
-[![Open in Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://chatbot-template.streamlit.app/)
+## Stack
+- Python 3.11
+- PySide6
+- SQLAlchemy + SQLite
+- matplotlib (Qt embedding)
+- pytest
+- pyinstaller
 
-### How to run it on your own machine
+## Installation
+```bash
+python -m venv .venv
+source .venv/bin/activate  # Windows: .venv\\Scripts\\activate
+pip install -r requirements.txt
+```
 
-1. Install the requirements
+## Lancer l’application
+```bash
+python app.py
+```
 
-   ```
-   $ pip install -r requirements.txt
-   ```
+La base est créée dans `data/questionnaire.db`.
+Au premier lancement, un seed est injecté automatiquement:
+- questionnaire `Questionnaire AC1024 – issu Excel`
+- 6 sections
+- questions avec numérotation globale et bonnes réponses.
 
-2. Run the app
+## Fonctionnalités principales
+- **Admin**:
+  - création questionnaire
+  - création session
+  - import rapide de stagiaires (copier/coller)
+  - ajout de questions en bloc (`1=a`, `2=c`, ...)
+- **Section**:
+  - workflow Session → Questionnaire → Section → Stagiaire
+  - grille `Numero | Bonne réponse | Réponse saisie | Score`
+  - enregistrement + recalcul
+  - effacement + copie JSON ChatGPT
+- **Stagiaire**:
+  - notes par section + graphique barres
+  - sections sous référence mises en évidence
+- **Synthèse groupe**:
+  - tableau des moyennes globales
+  - export CSV
+- **Comparatifs sections**:
+  - classement sections par moyenne groupe
+  - écart à la référence
+  - export CSV section
+- **Aide**:
+  - onglet intégré
+  - menu Aide
+  - touche F1
 
-   ```
-   $ streamlit run streamlit_app.py
-   ```
+## Build Windows (EXE)
+```bash
+pyinstaller QuestionnaireAC.spec --noconfirm
+```
+Résultat attendu:
+- `dist/QuestionnaireAC.exe`
+
+## Tests
+```bash
+pytest
+```
+
+Tests inclus:
+- `test_seed()`
+- `test_add_question_block_parse()`
+- `test_scoring()`
+- `test_section_stats()`
+- `test_group_synthesis()`
+- `test_reference_threshold()`
+
+## Aide
+Le contenu de l’aide se trouve dans:
+- `src/help/help.md`
