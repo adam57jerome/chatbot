@@ -17,33 +17,49 @@ def _iter_subject_sheet_names(sheet_names: Iterable[str]) -> Iterable[str]:
             yield sheet_name
 
 
+def _is_empty(value: object) -> bool:
+    return value is None or str(value).strip() == ""
+
+
 def detect_learners(ws) -> list[LearnerColumn]:
     learners: list[LearnerColumn] = []
     for col in range(4, ws.max_column + 1):
         header = ws.cell(row=4, column=col).value
-        if header is None:
+        if _is_empty(header):
             continue
+
         name = str(header).strip()
-        if not name:
+        # Exclure les en-têtes techniques éventuels
+        lowered = name.lower()
+        if lowered.startswith("score") or lowered in {"question", "bonne réponse"}:
             continue
-        if col + 1 > ws.max_column + 1:
-            continue
+
         learners.append(LearnerColumn(name=name, response_col=col, score_col=col + 1))
     return learners
 
 
-def detect_question_bounds(ws, start_row: int = 8) -> tuple[int, int] | None:
-    end_row = start_row - 1
-    row = start_row
-    while True:
+def detect_question_rows(ws, learners: list[LearnerColumn], start_row: int = 8, max_empty_streak: int = 3) -> list[int]:
+    rows: list[int] = []
+    started = False
+    empty_streak = 0
+
+    for row in range(start_row, ws.max_row + 1):
         q_number = ws.cell(row=row, column=2).value
-        if q_number in (None, ""):
-            break
-        end_row = row
-        row += 1
-    if end_row < start_row:
-        return None
-    return start_row, end_row
+        correct_answer = ws.cell(row=row, column=3).value
+        has_response = any(not _is_empty(ws.cell(row=row, column=l.response_col).value) for l in learners)
+
+        row_has_data = (not _is_empty(q_number)) or (not _is_empty(correct_answer)) or has_response
+
+        if row_has_data:
+            rows.append(row)
+            started = True
+            empty_streak = 0
+        elif started:
+            empty_streak += 1
+            if empty_streak >= max_empty_streak:
+                break
+
+    return rows
 
 
 def parse_subject_sheet(ws, sheet_name: str) -> SubjectSheet:
@@ -51,15 +67,15 @@ def parse_subject_sheet(ws, sheet_name: str) -> SubjectSheet:
     if not learners:
         raise ValueError("structure non reconnue: aucun apprenant détecté en ligne 4")
 
-    bounds = detect_question_bounds(ws, start_row=8)
-    if bounds is None:
-        raise ValueError("structure non reconnue: aucune question détectée en colonne B")
-    start_row, end_row = bounds
+    question_rows = detect_question_rows(ws, learners=learners, start_row=8)
+    if not question_rows:
+        raise ValueError("structure non reconnue: aucune question détectée")
 
     rows = []
-    for row in range(start_row, end_row + 1):
+    for idx, row in enumerate(question_rows, start=1):
+        q_value = ws.cell(row=row, column=2).value
         data: Dict[str, object] = {
-            "question": ws.cell(row=row, column=2).value,
+            "question": idx if _is_empty(q_value) else q_value,
             "correct_answer": ws.cell(row=row, column=3).value,
             "excel_row": row,
         }
@@ -68,6 +84,8 @@ def parse_subject_sheet(ws, sheet_name: str) -> SubjectSheet:
         rows.append(data)
 
     df = pd.DataFrame(rows)
+    start_row = question_rows[0]
+    end_row = question_rows[-1]
     total_row = end_row + 2
     note_row = end_row + 3
     return SubjectSheet(

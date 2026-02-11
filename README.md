@@ -49,7 +49,7 @@ Le cœur métier s'appuie sur des `dataclasses` :
 - Upload `.xlsx`
 - Détection automatique des feuilles matières (hors Feuil5/Synthèse)
 - Détection stagiaires via cellules non vides en ligne 4 (colonnes espacées supportées)
-- Détection du nombre de questions (colonne B depuis ligne 8)
+- Détection robuste des questions à partir de la ligne 8 (tolère décalages, numéros manquants et lignes vides intermédiaires)
 - Recalcul des scores (normalisation : trim/lower/suppression espaces multiples)
 - Réponses vides : score 0 + compteur par stagiaire
 - Export Excel recalculé + CSV synthèse

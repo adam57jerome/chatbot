@@ -18,15 +18,23 @@ def _build_workbook_bytes() -> bytes:
     ws.cell(row=4, column=5, value="Alice")  # E4
     ws.cell(row=4, column=8, value="Bob")  # H4
 
-    ws.cell(row=8, column=2, value=1)
-    ws.cell(row=8, column=3, value="oui")
-    ws.cell(row=8, column=5, value="oui")
-    ws.cell(row=8, column=8, value="non")
+    # Questions démarrent plus bas que la ligne 8, avec une ligne vide entre questions
+    ws.cell(row=10, column=2, value=1)
+    ws.cell(row=10, column=3, value="oui")
+    ws.cell(row=10, column=5, value="oui")
+    ws.cell(row=10, column=8, value="non")
 
-    ws.cell(row=9, column=2, value=2)
-    ws.cell(row=9, column=3, value="non")
-    ws.cell(row=9, column=5, value="non")
-    ws.cell(row=9, column=8, value="non")
+    ws.cell(row=11, column=2, value=None)
+    ws.cell(row=11, column=3, value="non")
+    ws.cell(row=11, column=5, value="non")
+    ws.cell(row=11, column=8, value="non")
+
+    ws.cell(row=12, column=2, value="")  # ligne vide dans le bloc
+
+    ws.cell(row=13, column=2, value=3)
+    ws.cell(row=13, column=3, value="peut-être")
+    ws.cell(row=13, column=5, value="peut-être")
+    ws.cell(row=13, column=8, value="oui")
 
     ws2 = wb.create_sheet("Feuil5")
     ws2.cell(row=1, column=1, value="ancienne synthèse")
@@ -36,7 +44,7 @@ def _build_workbook_bytes() -> bytes:
     return out.getvalue()
 
 
-def test_parse_score_and_synthesis_flow():
+def test_parse_score_and_synthesis_flow_with_flexible_question_detection():
     parsed = parse_workbook(_build_workbook_bytes())
 
     assert "Lecture de plan" in parsed.subjects
@@ -45,6 +53,7 @@ def test_parse_score_and_synthesis_flow():
     subjects = score_all_subjects(parsed.subjects)
     synthesis = build_synthesis(subjects)
 
-    assert subjects["Lecture de plan"].totals == {"Alice": 2, "Bob": 1}
+    # Alice: 3 bonnes réponses; Bob: 1 bonne réponse
+    assert subjects["Lecture de plan"].totals == {"Alice": 3, "Bob": 1}
     assert "Moyenne matière" in synthesis.columns
     assert synthesis.iloc[-1]["Matière"] == "Moyenne générale apprenant"
