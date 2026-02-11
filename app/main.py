@@ -27,3 +27,9 @@ async def attach_flash_state(request: Request, call_next):
 
 app.include_router(trainees.router)
 app.include_router(sections.router)
+
+
+if __name__ == "__main__":
+    import uvicorn
+
+    uvicorn.run("app.main:app", host="127.0.0.1", port=8001, reload=True)

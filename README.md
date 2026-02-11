@@ -62,10 +62,15 @@ python -m venv .venv
 pip install -r requirements.txt
 alembic upgrade head
 python scripts/seed.py   # optionnel
-uvicorn app.main:app --reload
+uvicorn app.main:app --reload --port 8001
 ```
 
-Puis ouvrir : http://127.0.0.1:8000
+Alternative (port 8001 par défaut):
+```powershell
+python -m app.main
+```
+
+Puis ouvrir : http://127.0.0.1:8001
 
 ## Filtres disponibles
 - `/stagiaires`: recherche nom/prénom/email + filtre section (toutes/sans section/section donnée)
