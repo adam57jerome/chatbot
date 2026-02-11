@@ -6,6 +6,7 @@
   <li>Email: {{ trainee.email or '-' }}</li>
   <li>Téléphone: {{ trainee.telephone or '-' }}</li>
   <li>Section: {% if trainee.section %}<a href="/sections/{{ trainee.section.id }}">{{ trainee.section.code }} - {{ trainee.section.nom }}</a>{% else %}Aucune{% endif %}</li>
+  <li>Formation souhaitée: {% if trainee.formation_souhaitee %}{{ trainee.formation_souhaitee.code }} - {{ trainee.formation_souhaitee.nom }}{% else %}Aucune{% endif %}</li>
   <li>Notes: {{ trainee.notes or '-' }}</li>
 </ul>
 <a class="btn" href="/stagiaires/{{ trainee.id }}/edit">Modifier</a>

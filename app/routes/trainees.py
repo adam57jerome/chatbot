@@ -18,17 +18,28 @@ def _flash(request: Request, kind: str, message: str) -> None:
 
 
 @router.get("", response_class=HTMLResponse)
-def list_trainees(request: Request, q: str | None = None, section: str | None = None, page: int = 1, db: Session = Depends(get_db)):
-    trainees, total = crud.list_stagiaires(db, q=q, section_filter=section, page=page)
+def list_trainees(
+    request: Request,
+    q: str | None = None,
+    section: str | None = None,
+    formation: str | None = None,
+    page: int = 1,
+    db: Session = Depends(get_db),
+):
+    trainees, total = crud.list_stagiaires(db, q=q, section_filter=section, formation_filter=formation, page=page)
     sections, _ = crud.list_sections(db, page=1, per_page=500)
+    formations, _ = crud.list_formations(db, page=1, per_page=500)
+
     return templates.TemplateResponse(
         "trainees_list.html",
         {
             "request": request,
             "trainees": trainees,
-            "sections": sections,
             "q": q or "",
+            "sections": sections,
             "section_filter": section or "",
+            "formations": formations,
+            "formation_filter": formation or "",
             "page": page,
             "has_next": page * 50 < total,
             "has_prev": page > 1,
@@ -39,7 +50,11 @@ def list_trainees(request: Request, q: str | None = None, section: str | None = 
 @router.get("/nouveau", response_class=HTMLResponse)
 def new_trainee_form(request: Request, db: Session = Depends(get_db)):
     sections, _ = crud.list_sections(db, page=1, per_page=500)
-    return templates.TemplateResponse("trainee_form.html", {"request": request, "sections": sections, "trainee": None, "errors": {}})
+    formations, _ = crud.list_formations(db, active_only=True, page=1, per_page=500)
+    return templates.TemplateResponse(
+        "trainee_form.html",
+        {"request": request, "sections": sections, "formations": formations, "trainee": None, "errors": {}},
+    )
 
 
 @router.post("/nouveau")
@@ -51,9 +66,12 @@ def create_trainee(
     telephone: str | None = Form(None),
     notes: str | None = Form(None),
     section_id: str | None = Form(None),
+    formation_souhaitee_id: str | None = Form(None),
     db: Session = Depends(get_db),
 ):
     sections, _ = crud.list_sections(db, page=1, per_page=500)
+    formations, _ = crud.list_formations(db, active_only=True, page=1, per_page=500)
+
     payload_data = {
         "nom": nom,
         "prenom": prenom,
@@ -61,7 +79,9 @@ def create_trainee(
         "telephone": telephone or None,
         "notes": notes or None,
         "section_id": int(section_id) if section_id else None,
+        "formation_souhaitee_id": int(formation_souhaitee_id) if formation_souhaitee_id else None,
     }
+
     try:
         payload = schemas.StagiaireCreate(**payload_data)
         trainee = crud.create_stagiaire(db, payload)
@@ -78,6 +98,7 @@ def create_trainee(
         {
             "request": request,
             "sections": sections,
+            "formations": formations,
             "trainee": payload_data,
             "errors": errors,
         },
@@ -100,8 +121,13 @@ def edit_trainee_form(trainee_id: int, request: Request, db: Session = Depends(g
     if not trainee:
         _flash(request, "error", "Stagiaire introuvable.")
         return RedirectResponse("/stagiaires", status_code=303)
+
     sections, _ = crud.list_sections(db, page=1, per_page=500)
-    return templates.TemplateResponse("trainee_form.html", {"request": request, "sections": sections, "trainee": trainee, "errors": {}})
+    formations, _ = crud.list_formations(db, active_only=True, page=1, per_page=500)
+    return templates.TemplateResponse(
+        "trainee_form.html",
+        {"request": request, "sections": sections, "formations": formations, "trainee": trainee, "errors": {}},
+    )
 
 
 @router.post("/{trainee_id}/edit")
@@ -114,6 +140,7 @@ def update_trainee(
     telephone: str | None = Form(None),
     notes: str | None = Form(None),
     section_id: str | None = Form(None),
+    formation_souhaitee_id: str | None = Form(None),
     db: Session = Depends(get_db),
 ):
     trainee = crud.get_stagiaire(db, trainee_id)
@@ -122,6 +149,7 @@ def update_trainee(
         return RedirectResponse("/stagiaires", status_code=303)
 
     sections, _ = crud.list_sections(db, page=1, per_page=500)
+    formations, _ = crud.list_formations(db, active_only=True, page=1, per_page=500)
     payload_data = {
         "nom": nom,
         "prenom": prenom,
@@ -129,6 +157,7 @@ def update_trainee(
         "telephone": telephone or None,
         "notes": notes or None,
         "section_id": int(section_id) if section_id else None,
+        "formation_souhaitee_id": int(formation_souhaitee_id) if formation_souhaitee_id else None,
     }
 
     try:
@@ -145,7 +174,13 @@ def update_trainee(
     payload_data["id"] = trainee.id
     return templates.TemplateResponse(
         "trainee_form.html",
-        {"request": request, "sections": sections, "trainee": payload_data, "errors": errors},
+        {
+            "request": request,
+            "sections": sections,
+            "formations": formations,
+            "trainee": payload_data,
+            "errors": errors,
+        },
         status_code=400,
     )
 

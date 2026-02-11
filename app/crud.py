@@ -3,14 +3,23 @@ from __future__ import annotations
 from sqlalchemy import Select, func, or_, select
 from sqlalchemy.orm import Session
 
-from app.models import Section, Stagiaire
-from app.schemas import SectionCreate, SectionUpdate, StagiaireCreate, StagiaireUpdate
+from app.models import Formation, Section, Stagiaire
+from app.schemas import (
+    FormationCreate,
+    FormationUpdate,
+    SectionCreate,
+    SectionUpdate,
+    StagiaireCreate,
+    StagiaireUpdate,
+)
 
 
 def paginate(query: Select, page: int, per_page: int = 50):
     page = max(page, 1)
     return query.limit(per_page).offset((page - 1) * per_page)
 
+
+# Sections
 
 def list_sections(db: Session, q: str | None = None, page: int = 1, per_page: int = 50):
     query = select(Section)
@@ -65,17 +74,12 @@ def trainees_in_section(db: Session, section_id: int):
     return list_trainees_in_section(db, section_id)
 
 
-def list_trainees_available_for_section(
-    db: Session,
-    section_id: int,
-    include_other_sections: bool = True,
-):
+def list_trainees_available_for_section(db: Session, section_id: int, include_other_sections: bool = True):
     base_query = select(Stagiaire)
     if include_other_sections:
         base_query = base_query.where(or_(Stagiaire.section_id.is_(None), Stagiaire.section_id != section_id))
     else:
         base_query = base_query.where(Stagiaire.section_id.is_(None))
-
     return db.scalars(base_query.order_by(Stagiaire.nom, Stagiaire.prenom)).all()
 
 
@@ -120,10 +124,75 @@ def delete_section_safely(db: Session, section_id: int) -> bool:
     return True
 
 
+# Formations
+
+def list_formations(
+    db: Session,
+    q: str | None = None,
+    active_only: bool = False,
+    actif_filter: str | None = None,
+    page: int = 1,
+    per_page: int = 50,
+):
+    query = select(Formation)
+    if q:
+        pattern = f"%{q.strip()}%"
+        query = query.where(or_(Formation.code.ilike(pattern), Formation.nom.ilike(pattern)))
+
+    if active_only or actif_filter == "active":
+        query = query.where(Formation.actif.is_(True))
+    elif actif_filter == "inactive":
+        query = query.where(Formation.actif.is_(False))
+
+    total = db.scalar(select(func.count()).select_from(query.subquery())) or 0
+    items = db.scalars(paginate(query.order_by(Formation.code), page, per_page)).all()
+    return items, total
+
+
+def get_formation_by_id(db: Session, formation_id: int) -> Formation | None:
+    return db.get(Formation, formation_id)
+
+
+def create_formation(db: Session, payload: FormationCreate) -> Formation:
+    formation = Formation(**payload.model_dump())
+    db.add(formation)
+    db.commit()
+    db.refresh(formation)
+    return formation
+
+
+def update_formation(db: Session, formation_id: int, payload: FormationUpdate) -> Formation | None:
+    formation = get_formation_by_id(db, formation_id)
+    if not formation:
+        return None
+
+    for key, value in payload.model_dump().items():
+        setattr(formation, key, value)
+    db.commit()
+    db.refresh(formation)
+    return formation
+
+
+def delete_formation_safely(db: Session, formation_id: int) -> bool:
+    formation = get_formation_by_id(db, formation_id)
+    if not formation:
+        return False
+
+    db.query(Stagiaire).filter(Stagiaire.formation_souhaitee_id == formation_id).update(
+        {Stagiaire.formation_souhaitee_id: None}
+    )
+    db.delete(formation)
+    db.commit()
+    return True
+
+
+# Stagiaires
+
 def list_stagiaires(
     db: Session,
     q: str | None = None,
     section_filter: str | None = None,
+    formation_filter: str | None = None,
     page: int = 1,
     per_page: int = 50,
 ):
@@ -138,6 +207,11 @@ def list_stagiaires(
         query = query.where(Stagiaire.section_id.is_(None))
     elif section_filter and section_filter.isdigit():
         query = query.where(Stagiaire.section_id == int(section_filter))
+
+    if formation_filter == "none":
+        query = query.where(Stagiaire.formation_souhaitee_id.is_(None))
+    elif formation_filter and formation_filter.isdigit():
+        query = query.where(Stagiaire.formation_souhaitee_id == int(formation_filter))
 
     total = db.scalar(select(func.count()).select_from(query.subquery())) or 0
     items = db.scalars(paginate(query.order_by(Stagiaire.nom, Stagiaire.prenom), page, per_page)).all()

@@ -37,6 +37,29 @@ class SectionUpdate(SectionBase):
     pass
 
 
+class FormationBase(BaseModel):
+    code: str
+    nom: str
+    description: str | None = None
+    actif: bool = True
+
+    @field_validator("code", "nom")
+    @classmethod
+    def required_fields(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("Ce champ est obligatoire.")
+        return value
+
+
+class FormationCreate(FormationBase):
+    pass
+
+
+class FormationUpdate(FormationBase):
+    pass
+
+
 class StagiaireBase(BaseModel):
     nom: str
     prenom: str
@@ -44,6 +67,7 @@ class StagiaireBase(BaseModel):
     telephone: str | None = None
     notes: str | None = None
     section_id: int | None = None
+    formation_souhaitee_id: int | None = None
 
     @field_validator("nom", "prenom")
     @classmethod
@@ -63,6 +87,11 @@ class StagiaireUpdate(StagiaireBase):
 
 
 class SectionRead(SectionBase):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+
+
+class FormationRead(FormationBase):
     model_config = ConfigDict(from_attributes=True)
     id: int
 

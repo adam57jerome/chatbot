@@ -26,6 +26,15 @@
       {% endfor %}
     </select>
   </label>
+  <label>Formation souhaitée
+    <select name="formation_souhaitee_id">
+      <option value="">Aucune</option>
+      {% for formation in formations %}
+        <option value="{{ formation.id }}" {% if trainee and trainee.formation_souhaitee_id == formation.id %}selected{% endif %}>{{ formation.code }} - {{ formation.nom }}</option>
+      {% endfor %}
+    </select>
+    {% if errors.formation_souhaitee_id %}<small class="error">{{ errors.formation_souhaitee_id }}</small>{% endif %}
+  </label>
   <label>Notes
     <textarea name="notes">{{ trainee.notes if trainee else '' }}</textarea>
   </label>

@@ -129,3 +129,22 @@ alembic upgrade head
 ### Vérifier le fichier SQLite utilisé
 - Chemin par défaut: `data/app.db` (chemin absolu résolu automatiquement).
 - Vous pouvez surcharger avec `DATABASE_URL`.
+
+## Mise à jour BDD (Formations)
+
+La feature **formations** ajoute :
+- une table `formations`
+- la colonne `stagiaires.formation_souhaitee_id` (FK nullable, `ON DELETE SET NULL`)
+
+Commandes Alembic:
+
+```powershell
+# générer une migration (si vous voulez la regénérer localement)
+alembic revision --autogenerate -m "add formations and trainee desired formation"
+
+# appliquer les migrations
+alembic upgrade head
+```
+
+Dans ce dépôt, la migration est déjà fournie :
+- `alembic/versions/0002_add_formations_and_trainee_wish.py`

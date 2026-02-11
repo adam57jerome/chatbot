@@ -11,8 +11,15 @@ from sqlalchemy.exc import IntegrityError, OperationalError
 
 from app import crud
 from app.db import SessionLocal, get_sqlite_db_path, init_db
-from app.models import Section, Stagiaire
-from app.schemas import SectionCreate, SectionUpdate, StagiaireCreate, StagiaireUpdate
+from app.models import Formation, Section, Stagiaire
+from app.schemas import (
+    FormationCreate,
+    FormationUpdate,
+    SectionCreate,
+    SectionUpdate,
+    StagiaireCreate,
+    StagiaireUpdate,
+)
 from ui.layout import inject_app_css, render_header, toast
 
 st.set_page_config(page_title="Gestion Stagiaires", layout="wide")
@@ -24,6 +31,8 @@ st.session_state.setdefault("trainee_screen", "list")
 st.session_state.setdefault("edit_trainee_id", None)
 st.session_state.setdefault("section_screen", "list")
 st.session_state.setdefault("edit_section_id", None)
+st.session_state.setdefault("formation_screen", "list")
+st.session_state.setdefault("edit_formation_id", None)
 
 
 def safe_query(action: Callable[[], T]) -> T:
@@ -38,6 +47,13 @@ def safe_query(action: Callable[[], T]) -> T:
 
 def load_sections(db):
     return safe_query(lambda: db.scalars(select(Section).order_by(Section.code)).all())
+
+
+def load_formations(db, active_only: bool = False):
+    stmt = select(Formation).order_by(Formation.code)
+    if active_only:
+        stmt = stmt.where(Formation.actif.is_(True))
+    return safe_query(lambda: db.scalars(stmt).all())
 
 
 def load_trainees(db, query: str):
@@ -58,15 +74,30 @@ def set_section_screen(screen: str, section_id: int | None = None) -> None:
     st.session_state.edit_section_id = section_id
 
 
-def render_trainee_form(*, db, mode: str, sections: list[Section], trainee: Stagiaire | None = None) -> None:
+def set_formation_screen(screen: str, formation_id: int | None = None) -> None:
+    st.session_state.formation_screen = screen
+    st.session_state.edit_formation_id = formation_id
+
+
+def render_trainee_form(*, db, mode: str, sections: list[Section], formations: list[Formation], trainee: Stagiaire | None = None) -> None:
     is_edit = mode == "edit"
     st.markdown("<div class='app-card'>", unsafe_allow_html=True)
     st.markdown(f"#### {'Modifier stagiaire' if is_edit else 'Nouveau stagiaire'}")
 
     section_options = {"Aucune section": None} | {f"{s.code} - {s.nom}": s.id for s in sections}
-    labels = list(section_options.keys())
-    current = trainee.section_id if trainee else None
-    default_label = next((label for label, sid in section_options.items() if sid == current), "Aucune section")
+    formation_options = {"Aucune formation": None} | {f"{f.code} - {f.nom}": f.id for f in formations}
+
+    section_labels = list(section_options.keys())
+    formation_labels = list(formation_options.keys())
+
+    current_section = trainee.section_id if trainee else None
+    current_formation = trainee.formation_souhaitee_id if trainee else None
+
+    default_section = next((label for label, sid in section_options.items() if sid == current_section), "Aucune section")
+    default_formation = next(
+        (label for label, fid in formation_options.items() if fid == current_formation),
+        "Aucune formation",
+    )
 
     with st.form(f"trainee_form_{mode}_{trainee.id if trainee else 'new'}"):
         left, right = st.columns(2)
@@ -74,7 +105,14 @@ def render_trainee_form(*, db, mode: str, sections: list[Section], trainee: Stag
         prenom = left.text_input("Prénom *", value=trainee.prenom if trainee else "")
         email = right.text_input("Email", value=trainee.email or "" if trainee else "")
         telephone = right.text_input("Téléphone", value=trainee.telephone or "" if trainee else "")
-        section_label = st.selectbox("Section", labels, index=labels.index(default_label))
+
+        orient_left, orient_right = st.columns(2)
+        section_label = orient_left.selectbox("Section", section_labels, index=section_labels.index(default_section))
+        formation_label = orient_right.selectbox(
+            "Formation souhaitée",
+            formation_labels,
+            index=formation_labels.index(default_formation),
+        )
         notes = st.text_area("Notes", value=trainee.notes or "" if trainee else "")
 
         primary, secondary = st.columns([1, 1])
@@ -87,13 +125,17 @@ def render_trainee_form(*, db, mode: str, sections: list[Section], trainee: Stag
 
         if save:
             section_id = section_options[section_label]
+            formation_id = formation_options[formation_label]
             field_errors: list[str] = []
+
             if not nom.strip():
                 field_errors.append("Le nom est obligatoire.")
             if not prenom.strip():
                 field_errors.append("Le prénom est obligatoire.")
             if section_id is not None and not crud.get_section_by_id(db, section_id):
                 field_errors.append("La section sélectionnée n'existe pas.")
+            if formation_id is not None and not crud.get_formation_by_id(db, formation_id):
+                field_errors.append("La formation sélectionnée n'existe pas.")
 
             if field_errors:
                 st.error("\n".join(field_errors))
@@ -101,30 +143,23 @@ def render_trainee_form(*, db, mode: str, sections: list[Section], trainee: Stag
                 return
 
             try:
+                payload = StagiaireUpdate(
+                    nom=nom,
+                    prenom=prenom,
+                    email=email or None,
+                    telephone=telephone or None,
+                    notes=notes or None,
+                    section_id=section_id,
+                    formation_souhaitee_id=formation_id,
+                )
                 if is_edit and trainee is not None:
-                    payload = StagiaireUpdate(
-                        nom=nom,
-                        prenom=prenom,
-                        email=email or None,
-                        telephone=telephone or None,
-                        notes=notes or None,
-                        section_id=section_id,
-                    )
                     if not crud.update_trainee(db, trainee.id, payload):
                         st.error("Stagiaire introuvable.")
                         st.markdown("</div>", unsafe_allow_html=True)
                         return
                     toast("success", "Stagiaire mis à jour")
                 else:
-                    payload = StagiaireCreate(
-                        nom=nom,
-                        prenom=prenom,
-                        email=email or None,
-                        telephone=telephone or None,
-                        notes=notes or None,
-                        section_id=section_id,
-                    )
-                    crud.create_stagiaire(db, payload)
+                    crud.create_stagiaire(db, StagiaireCreate(**payload.model_dump()))
                     toast("success", "Stagiaire créé")
                 set_trainee_screen("list")
                 st.rerun()
@@ -157,8 +192,12 @@ def render_section_form(*, db, mode: str, section: Section | None = None) -> Non
         has_date_debut = left.checkbox("Date début", value=section.date_debut is not None if section else False)
         has_date_fin = right.checkbox("Date fin", value=section.date_fin is not None if section else False)
 
-        date_debut = left.date_input("Date début", value=section.date_debut or date.today() if section else date.today(), disabled=not has_date_debut)
-        date_fin = right.date_input("Date fin", value=section.date_fin or date.today() if section else date.today(), disabled=not has_date_fin)
+        date_debut = left.date_input(
+            "Date début", value=section.date_debut or date.today() if section else date.today(), disabled=not has_date_debut
+        )
+        date_fin = right.date_input(
+            "Date fin", value=section.date_fin or date.today() if section else date.today(), disabled=not has_date_fin
+        )
         description = st.text_area("Description", value=section.description or "" if section else "")
 
         primary, secondary = st.columns([1, 1])
@@ -194,6 +233,61 @@ def render_section_form(*, db, mode: str, section: Section | None = None) -> Non
             except IntegrityError:
                 db.rollback()
                 st.error("Erreur: code section déjà utilisé.")
+
+    st.markdown("</div>", unsafe_allow_html=True)
+
+
+def render_formation_form(*, db, mode: str, formation: Formation | None = None) -> None:
+    is_edit = mode == "edit"
+    formation_id = formation.id if formation else None
+
+    if is_edit and not formation:
+        st.error("Formation introuvable.")
+        set_formation_screen("list")
+        return
+
+    st.markdown("<div class='app-card'>", unsafe_allow_html=True)
+    st.markdown(f"#### {'Modifier formation' if is_edit else 'Nouvelle formation'}")
+
+    with st.form(f"formation_form_{mode}_{formation_id or 'new'}"):
+        left, right = st.columns(2)
+        code = left.text_input("Code *", value=formation.code if formation else "")
+        nom = right.text_input("Nom *", value=formation.nom if formation else "")
+        actif = left.checkbox("Active", value=formation.actif if formation else True)
+        description = st.text_area("Description", value=formation.description or "" if formation else "")
+
+        primary, secondary = st.columns([1, 1])
+        save = primary.form_submit_button("💾 Enregistrer", type="primary")
+        cancel = secondary.form_submit_button("Annuler")
+
+        if cancel:
+            set_formation_screen("list")
+            st.rerun()
+
+        if save:
+            try:
+                payload = (FormationUpdate if is_edit else FormationCreate)(
+                    code=code,
+                    nom=nom,
+                    description=description or None,
+                    actif=actif,
+                )
+                if is_edit and formation_id is not None:
+                    if not crud.update_formation(db, formation_id, payload):
+                        st.error("Formation introuvable.")
+                        st.markdown("</div>", unsafe_allow_html=True)
+                        return
+                    toast("success", "Formation mise à jour")
+                else:
+                    crud.create_formation(db, payload)
+                    toast("success", "Formation créée")
+                set_formation_screen("list")
+                st.rerun()
+            except ValidationError as exc:
+                st.error("Validation: " + ", ".join(err["msg"] for err in exc.errors()))
+            except IntegrityError:
+                db.rollback()
+                st.error("Erreur: code formation déjà utilisé.")
 
     st.markdown("</div>", unsafe_allow_html=True)
 
@@ -244,11 +338,7 @@ def render_section_assignments(db, section_id: int) -> None:
 
 
 def page_stagiaires() -> None:
-    render_header(
-        "Gestion des stagiaires",
-        "Gestion / Stagiaires",
-        actions=[("+ Nouveau stagiaire", lambda: set_trainee_screen("create"))],
-    )
+    render_header("Gestion des stagiaires", "Gestion / Stagiaires", actions=[("+ Nouveau", lambda: set_trainee_screen("create"))])
 
     with SessionLocal() as db:
         st.markdown("<div class='app-toolbar'>", unsafe_allow_html=True)
@@ -257,12 +347,13 @@ def page_stagiaires() -> None:
 
         trainees = load_trainees(db, q)
         sections = load_sections(db)
+        formations = load_formations(db, active_only=True)
 
         if st.session_state.trainee_screen == "edit":
             trainee = crud.get_trainee_by_id(db, st.session_state.edit_trainee_id)
-            render_trainee_form(db=db, mode="edit", sections=sections, trainee=trainee)
+            render_trainee_form(db=db, mode="edit", sections=sections, formations=formations, trainee=trainee)
         elif st.session_state.trainee_screen == "create":
-            render_trainee_form(db=db, mode="create", sections=sections)
+            render_trainee_form(db=db, mode="create", sections=sections, formations=formations)
 
         st.markdown("<div class='app-card'>", unsafe_allow_html=True)
         st.markdown("#### Liste des stagiaires")
@@ -271,35 +362,29 @@ def page_stagiaires() -> None:
                 "Nom": t.nom,
                 "Prénom": t.prenom,
                 "Email": t.email or "-",
-                "Téléphone": t.telephone or "-",
                 "Section": t.section.code if t.section else "Aucune",
+                "Formation souhaitée": t.formation_souhaitee.code if t.formation_souhaitee else "Aucune",
             }
             for t in trainees
         ]
         st.dataframe(rows, use_container_width=True, hide_index=True)
 
-        if trainees:
-            st.markdown("##### Actions rapides")
-            for trainee in trainees:
-                line = st.columns([2, 2, 1, 1])
-                line[0].write(f"{trainee.nom} {trainee.prenom}")
-                line[1].write(trainee.email or "-")
-                if line[2].button("Modifier", key=f"edit_trainee_{trainee.id}"):
-                    set_trainee_screen("edit", trainee.id)
-                    st.rerun()
-                if line[3].button("Supprimer", key=f"delete_trainee_{trainee.id}"):
-                    crud.delete_stagiaire(db, trainee)
-                    toast("success", "Stagiaire supprimé")
-                    st.rerun()
+        for trainee in trainees:
+            line = st.columns([2, 2, 1, 1])
+            line[0].write(f"{trainee.nom} {trainee.prenom}")
+            line[1].write(trainee.formation_souhaitee.code if trainee.formation_souhaitee else "Aucune")
+            if line[2].button("Modifier", key=f"edit_trainee_{trainee.id}"):
+                set_trainee_screen("edit", trainee.id)
+                st.rerun()
+            if line[3].button("Supprimer", key=f"delete_trainee_{trainee.id}"):
+                crud.delete_stagiaire(db, trainee)
+                toast("success", "Stagiaire supprimé")
+                st.rerun()
         st.markdown("</div>", unsafe_allow_html=True)
 
 
 def page_sections() -> None:
-    render_header(
-        "Gestion des sections",
-        "Gestion / Sections",
-        actions=[("+ Nouvelle section", lambda: set_section_screen("create"))],
-    )
+    render_header("Gestion des sections", "Gestion / Sections", actions=[("+ Nouvelle", lambda: set_section_screen("create"))])
 
     with SessionLocal() as db:
         st.markdown("<div class='app-toolbar'>", unsafe_allow_html=True)
@@ -345,11 +430,58 @@ def page_sections() -> None:
         st.markdown("</div>", unsafe_allow_html=True)
 
 
+def page_formations() -> None:
+    render_header("Gestion des formations", "Gestion / Formations", actions=[("+ Nouvelle", lambda: set_formation_screen("create"))])
+
+    with SessionLocal() as db:
+        st.markdown("<div class='app-toolbar'>", unsafe_allow_html=True)
+        q = st.text_input("Recherche (code/nom)", key="q_formations")
+        active_filter = st.selectbox("Filtre actif", ["Toutes", "Actives", "Inactives"], key="formation_actif_filter")
+        st.markdown("</div>", unsafe_allow_html=True)
+
+        mapped = {"Toutes": None, "Actives": "active", "Inactives": "inactive"}
+        formations, _ = crud.list_formations(db, q=q, actif_filter=mapped[active_filter], page=1, per_page=500)
+
+        if st.session_state.formation_screen == "edit":
+            formation = crud.get_formation_by_id(db, st.session_state.edit_formation_id)
+            render_formation_form(db=db, mode="edit", formation=formation)
+        elif st.session_state.formation_screen == "create":
+            render_formation_form(db=db, mode="create")
+
+        st.markdown("<div class='app-card'>", unsafe_allow_html=True)
+        st.markdown("#### Liste des formations")
+        st.dataframe(
+            [
+                {
+                    "Code": f.code,
+                    "Nom": f.nom,
+                    "Actif": "Oui" if f.actif else "Non",
+                    "Description": f.description or "-",
+                }
+                for f in formations
+            ],
+            use_container_width=True,
+            hide_index=True,
+        )
+        for formation in formations:
+            row = st.columns([2, 3, 1, 1])
+            row[0].write(f"{formation.code} — {formation.nom}")
+            row[1].write("Active" if formation.actif else "Inactive")
+            if row[2].button("Modifier", key=f"edit_formation_{formation.id}"):
+                set_formation_screen("edit", formation.id)
+                st.rerun()
+            if row[3].button("Supprimer", key=f"delete_formation_{formation.id}"):
+                if crud.delete_formation_safely(db, formation.id):
+                    toast("success", "Formation supprimée et stagiaires désaffectés")
+                    st.rerun()
+                st.error("Formation introuvable")
+        st.markdown("</div>", unsafe_allow_html=True)
+
+
 def page_tools() -> None:
     render_header("Outils", "Outils / Initialisation")
     st.markdown("<div class='app-card'>", unsafe_allow_html=True)
     st.markdown("#### Maintenance")
-    st.caption("Initialiser ou alimenter la base locale")
     if st.button("Initialiser la base", type="primary"):
         init_db()
         toast("success", "Base initialisée")
@@ -361,7 +493,7 @@ def page_about() -> None:
     st.markdown("<div class='app-card'>", unsafe_allow_html=True)
     if logo_path.exists():
         st.image(str(logo_path))
-    st.markdown("**Gestion Stagiaires & Sections**")
+    st.markdown("**Gestion Stagiaires, Sections, Formations**")
     st.markdown("Application locale Streamlit/FastAPI pour la gestion métier.")
     st.markdown("</div>", unsafe_allow_html=True)
 
@@ -369,11 +501,10 @@ def page_about() -> None:
 def page_preferences() -> None:
     render_header("Préférences", "Paramètres / Préférences")
     st.markdown("<div class='app-card'>", unsafe_allow_html=True)
-    st.markdown("#### Configuration locale")
     db_path = get_sqlite_db_path()
     if db_path:
         st.code(db_path, language="text")
-    st.markdown("<span class='small-muted'>Le thème se configure dans .streamlit/config.toml.</span>", unsafe_allow_html=True)
+    st.markdown("Le thème est configurable dans `.streamlit/config.toml`.")
     st.markdown("</div>", unsafe_allow_html=True)
 
 
@@ -386,10 +517,9 @@ if hasattr(st, "navigation") and hasattr(st, "Page"):
             "Gestion": [
                 st.Page(page_stagiaires, title="Stagiaires", icon="👨‍🎓"),
                 st.Page(page_sections, title="Sections", icon="🏫"),
+                st.Page(page_formations, title="Formations", icon="🎓"),
             ],
-            "Outils": [
-                st.Page(page_tools, title="Init DB", icon="🛠️"),
-            ],
+            "Outils": [st.Page(page_tools, title="Init DB", icon="🛠️")],
             "Paramètres": [
                 st.Page(page_about, title="À propos", icon="ℹ️"),
                 st.Page(page_preferences, title="Préférences", icon="⚙️"),
@@ -402,11 +532,12 @@ else:
     st.sidebar.image(str(logo_path))
     choice = st.sidebar.selectbox(
         "Navigation",
-        ["Stagiaires", "Sections", "Init DB", "À propos", "Préférences"],
+        ["Stagiaires", "Sections", "Formations", "Init DB", "À propos", "Préférences"],
     )
     {
         "Stagiaires": page_stagiaires,
         "Sections": page_sections,
+        "Formations": page_formations,
         "Init DB": page_tools,
         "À propos": page_about,
         "Préférences": page_preferences,
