@@ -105,6 +105,15 @@ streamlit run streamlit_app.py --server.port 8501
 
 > Cette interface est indépendante de FastAPI et utilise typiquement le port `8501`.
 
+### UI (thème + navigation)
+- Thème Streamlit: défini dans `.streamlit/config.toml`.
+- Styles UI légers: `static/app.css` (cards, toolbar, header, espacements).
+- Navigation pro:
+  - priorité à `st.navigation(..., position="top")` avec groupes **Gestion / Outils / Paramètres**,
+  - fallback automatique sur menu latéral (`selectbox`) si la version Streamlit ne supporte pas `st.navigation`.
+- Version Streamlit recommandée: `>= 1.41`.
+- Pour ajuster les couleurs du thème: modifier directement les clés `[theme]` du fichier `.streamlit/config.toml`.
+
 
 ## Initialisation BDD
 
