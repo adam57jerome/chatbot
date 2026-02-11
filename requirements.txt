@@ -3,3 +3,4 @@ SQLAlchemy==2.0.36
 matplotlib==3.10.0
 pytest==8.3.4
 pyinstaller==6.11.1
+openpyxl==3.1.5

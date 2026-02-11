@@ -8,6 +8,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QKeySequence, QAction, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
+    QCheckBox,
     QComboBox,
     QDialog,
     QFileDialog,
@@ -32,6 +33,7 @@ from matplotlib.figure import Figure
 from sqlalchemy import select
 
 from .database import Base, SessionLocal, engine
+from .excel_import import import_excel_to_db, parse_excel_preview
 from .models import Question, Questionnaire, Section, Session as CohortSession, Trainee
 from .services import (
     color_for_score,
@@ -55,6 +57,107 @@ class HelpDialog(QDialog):
         help_file = Path(__file__).parent / "help" / "help.md"
         browser.setMarkdown(help_file.read_text(encoding="utf-8"))
         layout.addWidget(browser)
+
+
+class ExcelImportDialog(QDialog):
+    def __init__(self, db, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.db = db
+        self.preview = None
+        self.setWindowTitle("Importer Excel")
+        self.resize(780, 560)
+
+        layout = QVBoxLayout(self)
+
+        choose_btn = QPushButton("Choisir un fichier .xlsx…")
+        choose_btn.clicked.connect(self.choose_file)
+        choose_btn.setToolTip("Sélectionne le fichier Excel source")
+        layout.addWidget(choose_btn)
+
+        self.file_label = QLabel("Aucun fichier sélectionné")
+        layout.addWidget(self.file_label)
+
+        form = QFormLayout()
+        self.questionnaire_name = QLineEdit()
+        self.session_combo = QComboBox()
+        self.import_answers_cb = QCheckBox("Importer aussi les réponses existantes")
+        self.import_answers_cb.setChecked(False)
+
+        form.addRow("Questionnaire", self.questionnaire_name)
+        form.addRow("Session", self.session_combo)
+        form.addRow("", self.import_answers_cb)
+        layout.addLayout(form)
+
+        self.summary = QTextBrowser()
+        layout.addWidget(self.summary)
+
+        action_row = QHBoxLayout()
+        launch_btn = QPushButton("Lancer l'import")
+        launch_btn.clicked.connect(self.run_import)
+        cancel_btn = QPushButton("Annuler")
+        cancel_btn.clicked.connect(self.reject)
+        action_row.addWidget(launch_btn)
+        action_row.addWidget(cancel_btn)
+        layout.addLayout(action_row)
+
+        self.reload_sessions()
+
+    def reload_sessions(self) -> None:
+        self.session_combo.clear()
+        self.session_combo.addItem("Créer session depuis nom du fichier", "__auto__")
+        sessions = self.db.scalars(select(CohortSession).order_by(CohortSession.code)).all()
+        for s in sessions:
+            self.session_combo.addItem(f"{s.code} - {s.label}", s.code)
+
+    def choose_file(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(self, "Sélectionner fichier Excel", "", "Excel (*.xlsx)")
+        if not path:
+            return
+        try:
+            self.preview = parse_excel_preview(path)
+        except Exception as exc:
+            QMessageBox.warning(self, "Import Excel", f"Analyse impossible: {exc}")
+            return
+
+        self.file_label.setText(path)
+        self.questionnaire_name.setText(self.preview.questionnaire_name)
+        trainee_list = "<br/>".join(self.preview.trainees) if self.preview.trainees else "(aucun stagiaire détecté)"
+        sections = "<br/>".join(self.preview.section_names)
+        self.summary.setHtml(
+            f"<b>Questionnaire proposé:</b> {self.preview.questionnaire_name}<br/>"
+            f"<b>Sections détectées:</b> {len(self.preview.section_names)}<br/>{sections}<br/><br/>"
+            f"<b>Questions totales:</b> {self.preview.total_questions}<br/>"
+            f"<b>Stagiaires détectés:</b> {len(self.preview.trainees)}<br/>{trainee_list}"
+        )
+
+    def run_import(self) -> None:
+        if self.preview is None:
+            QMessageBox.warning(self, "Import Excel", "Choisissez d'abord un fichier .xlsx")
+            return
+
+        q_name = self.questionnaire_name.text().strip() or self.preview.questionnaire_name
+        session_code = self.session_combo.currentData()
+        if session_code == "__auto__":
+            session_code = Path(self.preview.source_path).stem.upper().replace(" ", "_")[:30]
+
+        try:
+            questionnaire, session = import_excel_to_db(
+                self.db,
+                self.preview,
+                questionnaire_name=q_name,
+                session_code=session_code,
+                import_answers=self.import_answers_cb.isChecked(),
+            )
+        except Exception as exc:
+            QMessageBox.critical(self, "Import Excel", f"Erreur pendant l'import: {exc}")
+            return
+
+        QMessageBox.information(
+            self,
+            "Import terminé",
+            f"Questionnaire créé: {questionnaire.name}\nSession: {session.code}",
+        )
+        self.accept()
 
 
 class MainWindow(QMainWindow):
@@ -222,6 +325,11 @@ class MainWindow(QMainWindow):
         add_trainees_btn.clicked.connect(self.import_trainees)
         layout.addWidget(self.trainees_block)
         layout.addWidget(add_trainees_btn)
+
+        excel_btn = QPushButton("Importer Excel…")
+        excel_btn.setToolTip("Importer questionnaire, sections, questions, stagiaires et réponses depuis un .xlsx")
+        excel_btn.clicked.connect(self.open_excel_import)
+        layout.addWidget(excel_btn)
 
         return widget
 
@@ -453,6 +561,11 @@ class MainWindow(QMainWindow):
             self.db.add(Trainee(session_id=sid, nom=nom, prenom=prenom, actif=True))
         self.db.commit()
         self.refresh_all_views()
+
+    def open_excel_import(self) -> None:
+        dialog = ExcelImportDialog(self.db, self)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            self.load_top_filters()
 
     def export_group_csv(self) -> None:
         sid = self.current_session_id()
