@@ -34,6 +34,7 @@ Le cœur métier s'appuie sur des `dataclasses` :
 - `src/`
   - `excel_parser.py`
   - `manual_input.py`
+  - `database.py`
   - `scoring.py`
   - `synthesis.py`
   - `exporters.py`
@@ -68,6 +69,15 @@ Le cœur métier s'appuie sur des `dataclasses` :
 - Camembert par stagiaire (bonnes vs mauvaises réponses)
 - Camembert par thématique (répartition moyenne groupe)
 - Analyse graphique du groupe (barres moyennes générales par stagiaire)
+
+### 4) Enregistrement & sauvegarde en base
+- Base SQLite locale (`.data/results.db`) créée automatiquement
+- Enregistrement des sections
+- Enregistrement des stagiaires
+- Liaison section ↔ stagiaires
+- Historique des calculs (imports Excel et saisie manuelle)
+- Sauvegarde des résultats par thématique et par stagiaire
+- Vue latérale dans l'app : sections enregistrées + derniers runs
 
 ## Installation
 
