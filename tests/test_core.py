@@ -18,7 +18,9 @@ def test_seed(db_session):
     questionnaire = db_session.scalar(select(Questionnaire))
     assert questionnaire is not None
     assert len(db_session.scalars(select(Section)).all()) == 6
-    assert len(db_session.scalars(select(Question)).all()) > 0
+    assert len(db_session.scalars(select(Question)).all()) == 167
+    section_names = {s.name for s in db_session.scalars(select(Section)).all()}
+    assert "Lecture de plan" in section_names
 
 
 def test_add_question_block_parse():

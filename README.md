@@ -30,8 +30,8 @@ python app.py
 La base est créée dans `data/questionnaire.db`.
 Au premier lancement, un seed est injecté automatiquement:
 - questionnaire `Questionnaire AC1024 – issu Excel`
-- 6 sections
-- questions avec numérotation globale et bonnes réponses.
+- 6 sections (`Lecture de plan`, `Acteur de l'acte de construire`, `Corps d'état dans le batiment`, `Utilisation de l'informatique e`, `Utilisation du français`, `Utilisation de Mathématique`)
+- 167 questions avec numérotation globale et bonnes réponses.
 
 ## Fonctionnalités principales
 - **Admin**:

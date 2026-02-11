@@ -48,12 +48,20 @@ def color_for_score(score: float, reference: float) -> str:
 
 
 def ensure_seed_data(db: Session) -> None:
-    existing = db.scalar(select(Questionnaire).limit(1))
+    seed_name = "Questionnaire AC1024 – issu Excel"
+    existing = db.scalar(select(Questionnaire).where(Questionnaire.name == seed_name))
     if existing:
-        return
+        has_questions = db.scalar(select(Question.id).where(Question.questionnaire_id == existing.id).limit(1))
+        if has_questions:
+            if not db.scalar(select(CohortSession).where(CohortSession.code == "AC1024").limit(1)):
+                db.add(CohortSession(code="AC1024", label="Session AC1024", active=True))
+                db.commit()
+            return
+        db.delete(existing)
+        db.flush()
 
     questionnaire = Questionnaire(
-        name="Questionnaire AC1024 – issu Excel",
+        name=seed_name,
         description="Seed initial sans import Excel",
         active=True,
         reference_score_20=15.0,
