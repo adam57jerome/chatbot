@@ -36,3 +36,20 @@ Dans l’onglet **Section**:
 
 ## 6) Raccourci F1
 Le raccourci **F1** ouvre cette aide contextuelle à tout moment.
+
+---
+
+## Process recommandé : Sections -> Stagiaires -> Rattacher questionnaire
+
+### <a name="wizard-etape-1"></a>Étape 1 — Sections et Questions
+- Créer un nouveau questionnaire **ou** utiliser un questionnaire existant.
+- Ajouter au moins une section et une question (possible via bloc `1=a`).
+
+### <a name="wizard-etape-2"></a>Étape 2 — Session et Stagiaires
+- Choisir/créer une session.
+- Ajouter les stagiaires (unitaire ou import texte).
+
+### <a name="wizard-etape-3"></a>Étape 3 — Rattacher le questionnaire
+- Vérifier le résumé.
+- Cliquer **Rattacher** pour créer/mettre à jour l’affectation de session.
+- Cliquer **Commencer la saisie**.

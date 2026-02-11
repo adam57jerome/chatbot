@@ -45,6 +45,7 @@ Au premier lancement, un seed est injecté automatiquement:
   - ajout de questions en bloc (`1=a`, `2=c`, ...)
   - import Excel `.xlsx` (questionnaire + sections + questions + stagiaires + réponses + scores recalculés)
   - gestion des conflits import: questionnaire existant (annuler/copie), sections existantes (ignorer), stagiaires existants (réutiliser)
+  - assistant guidé "Nouveau parcours…" : Sections → Stagiaires → Rattacher questionnaire
 - **Section**:
   - workflow Session → Questionnaire → Section → Stagiaire
   - grille `Numero | Bonne réponse | Réponse saisie | Score`

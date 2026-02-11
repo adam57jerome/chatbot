@@ -101,3 +101,13 @@ class Answer(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     attempt = relationship("Attempt", back_populates="answers")
+
+
+class Assignment(Base):
+    __tablename__ = "assignments"
+    __table_args__ = (UniqueConstraint("session_id", name="uq_assignment_session"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    session_id: Mapped[int] = mapped_column(ForeignKey("sessions.id", ondelete="CASCADE"), nullable=False)
+    questionnaire_id: Mapped[int] = mapped_column(ForeignKey("questionnaires.id", ondelete="CASCADE"), nullable=False)
+    assigned_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

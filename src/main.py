@@ -36,9 +36,11 @@ from matplotlib.figure import Figure
 from sqlalchemy import select
 
 from .database import SessionLocal, initialize_database
+from .assignment_service import can_start_saisie, get_assigned_questionnaire_id
 from .excel_importer import parse_excel_preview
 from .import_service import import_excel_to_db
 from .models import Question, Questionnaire, Section, Session as CohortSession, Trainee
+from .ui.wizard_setup import SetupWizardDialog
 from .services import (
     color_for_score,
     ensure_seed_data,
@@ -373,6 +375,11 @@ class MainWindow(QMainWindow):
         self.load_top_filters()
 
     def _build_menu_help(self) -> None:
+        file_menu = self.menuBar().addMenu("Parcours")
+        wizard_action = QAction("Nouveau parcours…", self)
+        wizard_action.triggered.connect(self.open_setup_wizard)
+        file_menu.addAction(wizard_action)
+
         help_menu = self.menuBar().addMenu("Aide")
         action = QAction("Ouvrir l'aide", self)
         action.triggered.connect(self.open_help)
@@ -491,6 +498,15 @@ class MainWindow(QMainWindow):
         excel_btn.clicked.connect(self.open_excel_import)
         layout.addWidget(excel_btn)
 
+        wizard_btn = QPushButton("Nouveau parcours…")
+        wizard_btn.setToolTip("Process guidé: Sections -> Stagiaires -> Rattacher questionnaire")
+        wizard_btn.clicked.connect(self.open_setup_wizard)
+        layout.addWidget(wizard_btn)
+
+        attach_btn = QPushButton("Rattacher questionnaire à une session")
+        attach_btn.clicked.connect(self.open_assignment_step)
+        layout.addWidget(attach_btn)
+
         return widget
 
     def _build_help_tab(self) -> QWidget:
@@ -521,8 +537,26 @@ class MainWindow(QMainWindow):
     def refresh_all_views(self) -> None:
         qid = self.current_questionnaire_id()
         sid = self.current_session_id()
-        if not qid or not sid:
+        if not sid:
             return
+
+        assigned_qid = get_assigned_questionnaire_id(self.db, sid)
+        if assigned_qid:
+            idx = self.questionnaire_combo.findData(assigned_qid)
+            if idx >= 0 and qid != assigned_qid:
+                self.questionnaire_combo.blockSignals(True)
+                self.questionnaire_combo.setCurrentIndex(idx)
+                self.questionnaire_combo.blockSignals(False)
+                qid = assigned_qid
+
+        if not qid:
+            self.reference_label.setText("Référence: -")
+            self.section_list.clear()
+            self.grid.setRowCount(0)
+            self.section_total.setText("Aucun questionnaire rattaché. Ouvrir l'assistant.")
+            self.section_total.setStyleSheet("color: #c62828; font-weight: bold;")
+            return
+
         questionnaire = self.db.get(Questionnaire, qid)
         self.reference_label.setText(f"Référence: {questionnaire.reference_score_20:.1f}/20")
 
@@ -557,6 +591,11 @@ class MainWindow(QMainWindow):
         qid = self.current_questionnaire_id()
         tid = self.trainee_combo.currentData()
         section = self.get_current_section()
+        if sid and not can_start_saisie(self.db, sid):
+            self.grid.setRowCount(0)
+            self.section_total.setText("Aucun questionnaire rattaché à cette session. Ouvrir l'assistant.")
+            self.section_total.setStyleSheet("color: #c62828; font-weight: bold;")
+            return
         if not all([sid, qid, tid, section]):
             return
 
@@ -724,6 +763,27 @@ class MainWindow(QMainWindow):
 
     def open_excel_import(self) -> None:
         dialog = ExcelImportDialog(self.db, self)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            self.load_top_filters()
+
+    def open_setup_wizard(self) -> None:
+        dialog = SetupWizardDialog(self.db, self, start_step=0)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            self.load_top_filters()
+            if dialog.selected_session_id:
+                i = self.session_combo.findData(dialog.selected_session_id)
+                if i >= 0:
+                    self.session_combo.setCurrentIndex(i)
+            if dialog.selected_questionnaire_id:
+                i = self.questionnaire_combo.findData(dialog.selected_questionnaire_id)
+                if i >= 0:
+                    self.questionnaire_combo.setCurrentIndex(i)
+
+    def open_assignment_step(self) -> None:
+        dialog = SetupWizardDialog(self.db, self, start_step=2)
+        dialog.selected_session_id = self.current_session_id()
+        dialog.selected_questionnaire_id = self.current_questionnaire_id()
+        dialog._update_step3_resume()
         if dialog.exec() == QDialog.DialogCode.Accepted:
             self.load_top_filters()
 
