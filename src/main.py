@@ -493,10 +493,15 @@ def main() -> None:
     with SessionLocal() as db:
         ensure_seed_data(db)
 
-    app = QApplication(sys.argv)
+    existing_app = QApplication.instance()
+    created_app = existing_app is None
+    app = QApplication(sys.argv) if created_app else existing_app
+
     w = MainWindow()
     w.show()
-    sys.exit(app.exec())
+
+    if created_app:
+        sys.exit(app.exec())
 
 
 if __name__ == "__main__":
