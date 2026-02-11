@@ -39,6 +39,17 @@ def get_section_by_id(db: Session, section_id: int) -> Section | None:
     return get_section(db, section_id)
 
 
+def get_section_by_code(db: Session, code: str) -> Section | None:
+    return db.scalar(select(Section).where(Section.code == code.strip()))
+
+
+def create_section_from_code(db: Session, code: str) -> Section:
+    section = Section(code=code.strip(), nom=code.strip())
+    db.add(section)
+    db.flush()
+    return section
+
+
 def create_section(db: Session, payload: SectionCreate) -> Section:
     section = Section(**payload.model_dump())
     db.add(section)
@@ -153,6 +164,17 @@ def get_formation_by_id(db: Session, formation_id: int) -> Formation | None:
     return db.get(Formation, formation_id)
 
 
+def get_formation_by_code(db: Session, code: str) -> Formation | None:
+    return db.scalar(select(Formation).where(Formation.code == code.strip()))
+
+
+def create_formation_from_code(db: Session, code: str) -> Formation:
+    formation = Formation(code=code.strip(), nom=code.strip(), actif=True)
+    db.add(formation)
+    db.flush()
+    return formation
+
+
 def create_formation(db: Session, payload: FormationCreate) -> Formation:
     formation = Formation(**payload.model_dump())
     db.add(formation)
@@ -224,6 +246,12 @@ def get_stagiaire(db: Session, trainee_id: int) -> Stagiaire | None:
 
 def get_trainee_by_id(db: Session, trainee_id: int) -> Stagiaire | None:
     return get_stagiaire(db, trainee_id)
+
+
+def get_trainee_by_email(db: Session, email: str | None) -> Stagiaire | None:
+    if not email:
+        return None
+    return db.scalar(select(Stagiaire).where(Stagiaire.email == email.strip()))
 
 
 def create_stagiaire(db: Session, payload: StagiaireCreate) -> Stagiaire:

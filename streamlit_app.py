@@ -11,6 +11,8 @@ from sqlalchemy.exc import IntegrityError, OperationalError
 
 from app import crud
 from app.db import SessionLocal, get_sqlite_db_path, init_db
+from app.help_texts import AIDE_SECTIONS, CSV_EXAMPLE, HELP_TEXTS
+from app.importer import ImportOptions, apply_import, parse_csv, report_to_csv, validate_rows
 from app.models import Formation, Section, Stagiaire
 from app.schemas import (
     FormationCreate,
@@ -94,25 +96,18 @@ def render_trainee_form(*, db, mode: str, sections: list[Section], formations: l
     current_formation = trainee.formation_souhaitee_id if trainee else None
 
     default_section = next((label for label, sid in section_options.items() if sid == current_section), "Aucune section")
-    default_formation = next(
-        (label for label, fid in formation_options.items() if fid == current_formation),
-        "Aucune formation",
-    )
+    default_formation = next((label for label, fid in formation_options.items() if fid == current_formation), "Aucune formation")
 
     with st.form(f"trainee_form_{mode}_{trainee.id if trainee else 'new'}"):
         left, right = st.columns(2)
         nom = left.text_input("Nom *", value=trainee.nom if trainee else "")
         prenom = left.text_input("Prénom *", value=trainee.prenom if trainee else "")
-        email = right.text_input("Email", value=trainee.email or "" if trainee else "")
+        email = right.text_input("Email", value=trainee.email or "" if trainee else "", help=HELP_TEXTS["email"])
         telephone = right.text_input("Téléphone", value=trainee.telephone or "" if trainee else "")
 
         orient_left, orient_right = st.columns(2)
-        section_label = orient_left.selectbox("Section", section_labels, index=section_labels.index(default_section))
-        formation_label = orient_right.selectbox(
-            "Formation souhaitée",
-            formation_labels,
-            index=formation_labels.index(default_formation),
-        )
+        section_label = orient_left.selectbox("Section", section_labels, index=section_labels.index(default_section), help=HELP_TEXTS["section"])
+        formation_label = orient_right.selectbox("Formation souhaitée", formation_labels, index=formation_labels.index(default_formation), help=HELP_TEXTS["formation"])
         notes = st.text_area("Notes", value=trainee.notes or "" if trainee else "")
 
         primary, secondary = st.columns([1, 1])
@@ -127,7 +122,6 @@ def render_trainee_form(*, db, mode: str, sections: list[Section], formations: l
             section_id = section_options[section_label]
             formation_id = formation_options[formation_label]
             field_errors: list[str] = []
-
             if not nom.strip():
                 field_errors.append("Le nom est obligatoire.")
             if not prenom.strip():
@@ -136,7 +130,6 @@ def render_trainee_form(*, db, mode: str, sections: list[Section], formations: l
                 field_errors.append("La section sélectionnée n'existe pas.")
             if formation_id is not None and not crud.get_formation_by_id(db, formation_id):
                 field_errors.append("La formation sélectionnée n'existe pas.")
-
             if field_errors:
                 st.error("\n".join(field_errors))
                 st.markdown("</div>", unsafe_allow_html=True)
@@ -144,13 +137,8 @@ def render_trainee_form(*, db, mode: str, sections: list[Section], formations: l
 
             try:
                 payload = StagiaireUpdate(
-                    nom=nom,
-                    prenom=prenom,
-                    email=email or None,
-                    telephone=telephone or None,
-                    notes=notes or None,
-                    section_id=section_id,
-                    formation_souhaitee_id=formation_id,
+                    nom=nom, prenom=prenom, email=email or None, telephone=telephone or None,
+                    notes=notes or None, section_id=section_id, formation_souhaitee_id=formation_id
                 )
                 if is_edit and trainee is not None:
                     if not crud.update_trainee(db, trainee.id, payload):
@@ -175,7 +163,6 @@ def render_trainee_form(*, db, mode: str, sections: list[Section], formations: l
 def render_section_form(*, db, mode: str, section: Section | None = None) -> None:
     is_edit = mode == "edit"
     section_id = section.id if section else None
-
     if is_edit and not section:
         st.error("Section introuvable.")
         set_section_screen("list")
@@ -183,39 +170,26 @@ def render_section_form(*, db, mode: str, section: Section | None = None) -> Non
 
     st.markdown("<div class='app-card'>", unsafe_allow_html=True)
     st.markdown(f"#### {'Modifier section' if is_edit else 'Nouvelle section'}")
-
     with st.form(f"section_form_{mode}_{section_id or 'new'}"):
         left, right = st.columns(2)
         code = left.text_input("Code *", value=section.code if section else "")
         nom = right.text_input("Nom *", value=section.nom if section else "")
-
         has_date_debut = left.checkbox("Date début", value=section.date_debut is not None if section else False)
-        has_date_fin = right.checkbox("Date fin", value=section.date_fin is not None if section else False)
-
-        date_debut = left.date_input(
-            "Date début", value=section.date_debut or date.today() if section else date.today(), disabled=not has_date_debut
-        )
-        date_fin = right.date_input(
-            "Date fin", value=section.date_fin or date.today() if section else date.today(), disabled=not has_date_fin
-        )
+        has_date_fin = right.checkbox("Date fin", value=section.date_fin is not None if section else False, help=HELP_TEXTS["dates"])
+        date_debut = left.date_input("Date début", value=section.date_debut or date.today() if section else date.today(), disabled=not has_date_debut)
+        date_fin = right.date_input("Date fin", value=section.date_fin or date.today() if section else date.today(), disabled=not has_date_fin)
         description = st.text_area("Description", value=section.description or "" if section else "")
 
-        primary, secondary = st.columns([1, 1])
-        save = primary.form_submit_button("💾 Enregistrer", type="primary")
-        cancel = secondary.form_submit_button("Annuler")
-
+        save = st.form_submit_button("💾 Enregistrer", type="primary")
+        cancel = st.form_submit_button("Annuler")
         if cancel:
             set_section_screen("list")
             st.rerun()
-
         if save:
             try:
                 payload = (SectionUpdate if is_edit else SectionCreate)(
-                    code=code,
-                    nom=nom,
-                    date_debut=date_debut if has_date_debut else None,
-                    date_fin=date_fin if has_date_fin else None,
-                    description=description or None,
+                    code=code, nom=nom, date_debut=date_debut if has_date_debut else None,
+                    date_fin=date_fin if has_date_fin else None, description=description or None,
                 )
                 if is_edit and section_id is not None:
                     if not crud.update_section(db, section_id, payload):
@@ -233,14 +207,12 @@ def render_section_form(*, db, mode: str, section: Section | None = None) -> Non
             except IntegrityError:
                 db.rollback()
                 st.error("Erreur: code section déjà utilisé.")
-
     st.markdown("</div>", unsafe_allow_html=True)
 
 
 def render_formation_form(*, db, mode: str, formation: Formation | None = None) -> None:
     is_edit = mode == "edit"
     formation_id = formation.id if formation else None
-
     if is_edit and not formation:
         st.error("Formation introuvable.")
         set_formation_screen("list")
@@ -248,30 +220,20 @@ def render_formation_form(*, db, mode: str, formation: Formation | None = None) 
 
     st.markdown("<div class='app-card'>", unsafe_allow_html=True)
     st.markdown(f"#### {'Modifier formation' if is_edit else 'Nouvelle formation'}")
-
     with st.form(f"formation_form_{mode}_{formation_id or 'new'}"):
         left, right = st.columns(2)
         code = left.text_input("Code *", value=formation.code if formation else "")
         nom = right.text_input("Nom *", value=formation.nom if formation else "")
         actif = left.checkbox("Active", value=formation.actif if formation else True)
         description = st.text_area("Description", value=formation.description or "" if formation else "")
-
-        primary, secondary = st.columns([1, 1])
-        save = primary.form_submit_button("💾 Enregistrer", type="primary")
-        cancel = secondary.form_submit_button("Annuler")
-
+        save = st.form_submit_button("💾 Enregistrer", type="primary")
+        cancel = st.form_submit_button("Annuler")
         if cancel:
             set_formation_screen("list")
             st.rerun()
-
         if save:
             try:
-                payload = (FormationUpdate if is_edit else FormationCreate)(
-                    code=code,
-                    nom=nom,
-                    description=description or None,
-                    actif=actif,
-                )
+                payload = (FormationUpdate if is_edit else FormationCreate)(code=code, nom=nom, description=description or None, actif=actif)
                 if is_edit and formation_id is not None:
                     if not crud.update_formation(db, formation_id, payload):
                         st.error("Formation introuvable.")
@@ -288,7 +250,6 @@ def render_formation_form(*, db, mode: str, formation: Formation | None = None) 
             except IntegrityError:
                 db.rollback()
                 st.error("Erreur: code formation déjà utilisé.")
-
     st.markdown("</div>", unsafe_allow_html=True)
 
 
@@ -296,15 +257,12 @@ def render_section_assignments(db, section_id: int) -> None:
     st.markdown("<div class='app-card'>", unsafe_allow_html=True)
     st.markdown("#### Affectation des stagiaires")
     include_other = st.checkbox("Inclure stagiaires d'autres sections", value=True, key=f"include_other_{section_id}")
-
     in_section = crud.list_trainees_in_section(db, section_id)
     available = crud.list_trainees_available_for_section(db, section_id, include_other_sections=include_other)
 
     col_in, col_av = st.columns(2)
     with col_in:
         st.markdown("**Dans cette section**")
-        if not in_section:
-            st.caption("Aucun stagiaire")
         for trainee in in_section:
             row = st.columns([3, 1])
             row[0].write(f"{trainee.nom} {trainee.prenom}")
@@ -315,8 +273,6 @@ def render_section_assignments(db, section_id: int) -> None:
 
     with col_av:
         st.markdown("**Disponibles**")
-        if not available:
-            st.caption("Aucun stagiaire")
         for trainee in available:
             row = st.columns([3, 1])
             row[0].write(f"{trainee.nom} {trainee.prenom}")
@@ -325,21 +281,19 @@ def render_section_assignments(db, section_id: int) -> None:
                 toast("success", f"{trainee.prenom} ajouté")
                 st.rerun()
 
-    st.warning("Suppression: les stagiaires seront désaffectés puis la section supprimée.")
-    confirm = st.checkbox("Je confirme la suppression", key=f"confirm_delete_{section_id}")
-    if st.button("🗑️ Supprimer la section", disabled=not confirm, key=f"delete_{section_id}"):
+    confirm = st.checkbox("Je confirme la suppression", key=f"confirm_delete_{section_id}", help=HELP_TEXTS["delete"])
+    if st.button("🗑️ Supprimer la section", disabled=not confirm, key=f"delete_{section_id}", help=HELP_TEXTS["delete"]):
         if crud.delete_section_safely(db, section_id):
             toast("success", "Section supprimée")
             set_section_screen("list")
             st.rerun()
         st.error("Section introuvable")
-
     st.markdown("</div>", unsafe_allow_html=True)
 
 
 def page_stagiaires() -> None:
     render_header("Gestion des stagiaires", "Gestion / Stagiaires", actions=[("+ Nouveau", lambda: set_trainee_screen("create"))])
-
+    st.info("ℹ️ Astuce: utilisez l'email pour éviter les doublons et faciliter les mises à jour CSV.")
     with SessionLocal() as db:
         st.markdown("<div class='app-toolbar'>", unsafe_allow_html=True)
         q = st.text_input("Recherche (nom, prénom, email)", key="q_trainees")
@@ -355,47 +309,23 @@ def page_stagiaires() -> None:
         elif st.session_state.trainee_screen == "create":
             render_trainee_form(db=db, mode="create", sections=sections, formations=formations)
 
-        st.markdown("<div class='app-card'>", unsafe_allow_html=True)
-        st.markdown("#### Liste des stagiaires")
-        rows = [
+        st.dataframe([
             {
-                "Nom": t.nom,
-                "Prénom": t.prenom,
-                "Email": t.email or "-",
-                "Section": t.section.code if t.section else "Aucune",
+                "Nom": t.nom, "Prénom": t.prenom, "Email": t.email or "-", "Section": t.section.code if t.section else "Aucune",
                 "Formation souhaitée": t.formation_souhaitee.code if t.formation_souhaitee else "Aucune",
             }
             for t in trainees
-        ]
-        st.dataframe(rows, use_container_width=True, hide_index=True)
-
-        for trainee in trainees:
-            line = st.columns([2, 2, 1, 1])
-            line[0].write(f"{trainee.nom} {trainee.prenom}")
-            line[1].write(trainee.formation_souhaitee.code if trainee.formation_souhaitee else "Aucune")
-            if line[2].button("Modifier", key=f"edit_trainee_{trainee.id}"):
-                set_trainee_screen("edit", trainee.id)
-                st.rerun()
-            if line[3].button("Supprimer", key=f"delete_trainee_{trainee.id}"):
-                crud.delete_stagiaire(db, trainee)
-                toast("success", "Stagiaire supprimé")
-                st.rerun()
-        st.markdown("</div>", unsafe_allow_html=True)
+        ], use_container_width=True, hide_index=True)
 
 
 def page_sections() -> None:
     render_header("Gestion des sections", "Gestion / Sections", actions=[("+ Nouvelle", lambda: set_section_screen("create"))])
-
     with SessionLocal() as db:
-        st.markdown("<div class='app-toolbar'>", unsafe_allow_html=True)
         q_section = st.text_input("Recherche (code/nom)", key="q_sections")
-        st.markdown("</div>", unsafe_allow_html=True)
-
         sections = load_sections(db)
         if q_section:
             needle = q_section.lower().strip()
             sections = [s for s in sections if needle in s.code.lower() or needle in s.nom.lower()]
-
         if st.session_state.section_screen == "edit":
             section = crud.get_section_by_id(db, st.session_state.edit_section_id)
             render_section_form(db=db, mode="edit", section=section)
@@ -403,42 +333,14 @@ def page_sections() -> None:
                 render_section_assignments(db, section.id)
         elif st.session_state.section_screen == "create":
             render_section_form(db=db, mode="create")
-
-        st.markdown("<div class='app-card'>", unsafe_allow_html=True)
-        st.markdown("#### Liste des sections")
-        st.dataframe(
-            [
-                {
-                    "Code": s.code,
-                    "Nom": s.nom,
-                    "Début": s.date_debut,
-                    "Fin": s.date_fin,
-                    "Stagiaires": len(s.stagiaires),
-                }
-                for s in sections
-            ],
-            use_container_width=True,
-            hide_index=True,
-        )
-        for section in sections:
-            row = st.columns([2, 2, 1])
-            row[0].write(f"{section.code} — {section.nom}")
-            row[1].write(f"{len(section.stagiaires)} stagiaire(s)")
-            if row[2].button("Modifier", key=f"edit_section_{section.id}"):
-                set_section_screen("edit", section.id)
-                st.rerun()
-        st.markdown("</div>", unsafe_allow_html=True)
+        st.dataframe([{"Code": s.code, "Nom": s.nom, "Stagiaires": len(s.stagiaires)} for s in sections], use_container_width=True, hide_index=True)
 
 
 def page_formations() -> None:
     render_header("Gestion des formations", "Gestion / Formations", actions=[("+ Nouvelle", lambda: set_formation_screen("create"))])
-
     with SessionLocal() as db:
-        st.markdown("<div class='app-toolbar'>", unsafe_allow_html=True)
         q = st.text_input("Recherche (code/nom)", key="q_formations")
         active_filter = st.selectbox("Filtre actif", ["Toutes", "Actives", "Inactives"], key="formation_actif_filter")
-        st.markdown("</div>", unsafe_allow_html=True)
-
         mapped = {"Toutes": None, "Actives": "active", "Inactives": "inactive"}
         formations, _ = crud.list_formations(db, q=q, actif_filter=mapped[active_filter], page=1, per_page=500)
 
@@ -448,64 +350,118 @@ def page_formations() -> None:
         elif st.session_state.formation_screen == "create":
             render_formation_form(db=db, mode="create")
 
-        st.markdown("<div class='app-card'>", unsafe_allow_html=True)
-        st.markdown("#### Liste des formations")
-        st.dataframe(
-            [
-                {
-                    "Code": f.code,
-                    "Nom": f.nom,
-                    "Actif": "Oui" if f.actif else "Non",
-                    "Description": f.description or "-",
-                }
-                for f in formations
-            ],
-            use_container_width=True,
-            hide_index=True,
+        st.dataframe([{"Code": f.code, "Nom": f.nom, "Actif": "Oui" if f.actif else "Non"} for f in formations], use_container_width=True, hide_index=True)
+
+
+def page_import_csv() -> None:
+    render_header("Import CSV", "Outils / Import CSV")
+    st.info("ℹ️ Importez vos stagiaires avec prévisualisation, mapping et rapport téléchargeable.")
+
+    upload = st.file_uploader("Fichier CSV", type=["csv"], help="Choisir un fichier .csv")
+    sep_choice = st.selectbox("Séparateur", ["auto", ",", ";", "\t"], help=HELP_TEXTS["import_separator"])
+    encoding_choice = st.selectbox("Encodage", ["auto", "utf-8", "latin-1"], help=HELP_TEXTS["import_encoding"])
+    has_header = st.checkbox("Le fichier a une ligne d'en-tête", value=True)
+
+    if not upload:
+        return
+
+    raw = upload.getvalue()
+    try:
+        df = parse_csv(raw, sep=sep_choice, encoding=encoding_choice, has_header=has_header)
+    except ValueError as exc:
+        st.error(str(exc))
+        return
+
+    st.markdown("#### Prévisualisation")
+    st.dataframe(df.head(20), use_container_width=True)
+    st.caption(f"Colonnes détectées: {', '.join(df.columns)}")
+
+    st.markdown("#### Mapping des colonnes")
+    columns = ["-- Ignorer --"] + list(df.columns)
+    c1, c2 = st.columns(2)
+    mapping = {
+        "nom": c1.selectbox("nom *", columns, index=columns.index("nom") if "nom" in columns else 0),
+        "prenom": c2.selectbox("prenom *", columns, index=columns.index("prenom") if "prenom" in columns else 0),
+        "email": c1.selectbox("email", columns, index=columns.index("email") if "email" in columns else 0),
+        "telephone": c2.selectbox("telephone", columns, index=columns.index("telephone") if "telephone" in columns else 0),
+        "notes": c1.selectbox("notes", columns, index=columns.index("notes") if "notes" in columns else 0),
+        "section_code": c2.selectbox("section_code/section", columns, index=columns.index("section_code") if "section_code" in columns else (columns.index("section") if "section" in columns else 0)),
+        "formation_code": c1.selectbox("formation_code/formation", columns, index=columns.index("formation_code") if "formation_code" in columns else (columns.index("formation") if "formation" in columns else 0)),
+    }
+
+    create_sections = st.checkbox("Créer sections manquantes", value=False)
+    create_formations = st.checkbox("Créer formations manquantes", value=False)
+    strategy = st.selectbox("Stratégie doublons", ["skip", "update", "strict"], help=HELP_TEXTS["import_strategy"])
+
+    with SessionLocal() as db:
+        options = ImportOptions(
+            create_missing_sections=create_sections,
+            create_missing_formations=create_formations,
+            duplicate_strategy=strategy,
         )
-        for formation in formations:
-            row = st.columns([2, 3, 1, 1])
-            row[0].write(f"{formation.code} — {formation.nom}")
-            row[1].write("Active" if formation.actif else "Inactive")
-            if row[2].button("Modifier", key=f"edit_formation_{formation.id}"):
-                set_formation_screen("edit", formation.id)
-                st.rerun()
-            if row[3].button("Supprimer", key=f"delete_formation_{formation.id}"):
-                if crud.delete_formation_safely(db, formation.id):
-                    toast("success", "Formation supprimée et stagiaires désaffectés")
-                    st.rerun()
-                st.error("Formation introuvable")
-        st.markdown("</div>", unsafe_allow_html=True)
+        valid_rows, errors, duplicates = validate_rows(df, mapping, db, options)
+
+        st.markdown("#### Résumé avant import")
+        st.write({
+            "lignes_totales": len(df),
+            "lignes_valides": len(valid_rows),
+            "lignes_erreur": len(errors),
+            "doublons_detectes": len(duplicates),
+        })
+        if errors:
+            st.dataframe(errors, use_container_width=True)
+
+        if st.button("Lancer l'import", type="primary"):
+            stats, report = apply_import(db, valid_rows, options)
+            report = report + errors
+            st.success(f"Import terminé: créés={stats['created']}, mis à jour={stats['updated']}, ignorés={stats['skipped']}, erreurs={stats['errors']}")
+            st.dataframe(report, use_container_width=True)
+            st.download_button("Télécharger rapport_import.csv", data=report_to_csv(report), file_name="rapport_import.csv", mime="text/csv")
+
+
+def page_help() -> None:
+    render_header("📘 Aide", "Aide / Guide utilisateur")
+    st.markdown("### Sommaire")
+    st.markdown("- Vue d'ensemble\n- Stagiaires\n- Sections\n- Formations\n- Import CSV\n- Sauvegarde / BDD")
+
+    with st.expander("Vue d'ensemble"):
+        st.write(AIDE_SECTIONS["overview"])
+    with st.expander("Stagiaires"):
+        st.write(AIDE_SECTIONS["stagiaires"])
+    with st.expander("Sections"):
+        st.write(AIDE_SECTIONS["sections"])
+    with st.expander("Formations"):
+        st.write(AIDE_SECTIONS["formations"])
+    with st.expander("Import CSV"):
+        st.write(AIDE_SECTIONS["import_csv"])
+        st.code(CSV_EXAMPLE, language="csv")
+        st.markdown("Erreurs fréquentes: email invalide, section/formation absente, colonnes non mappées.")
+    with st.expander("Sauvegarde / Base de données"):
+        st.write(AIDE_SECTIONS["database"])
+        db_path = get_sqlite_db_path()
+        if db_path:
+            st.code(db_path, language="text")
 
 
 def page_tools() -> None:
     render_header("Outils", "Outils / Initialisation")
-    st.markdown("<div class='app-card'>", unsafe_allow_html=True)
-    st.markdown("#### Maintenance")
     if st.button("Initialiser la base", type="primary"):
         init_db()
         toast("success", "Base initialisée")
-    st.markdown("</div>", unsafe_allow_html=True)
 
 
 def page_about() -> None:
     render_header("À propos", "Paramètres / À propos")
-    st.markdown("<div class='app-card'>", unsafe_allow_html=True)
     if logo_path.exists():
         st.image(str(logo_path))
     st.markdown("**Gestion Stagiaires, Sections, Formations**")
-    st.markdown("Application locale Streamlit/FastAPI pour la gestion métier.")
-    st.markdown("</div>", unsafe_allow_html=True)
 
 
 def page_preferences() -> None:
     render_header("Préférences", "Paramètres / Préférences")
-    st.markdown("<div class='app-card'>", unsafe_allow_html=True)
     db_path = get_sqlite_db_path()
     if db_path:
         st.code(db_path, language="text")
-    st.markdown("Le thème est configurable dans `.streamlit/config.toml`.")
-    st.markdown("</div>", unsafe_allow_html=True)
 
 
 init_db()
@@ -519,8 +475,12 @@ if hasattr(st, "navigation") and hasattr(st, "Page"):
                 st.Page(page_sections, title="Sections", icon="🏫"),
                 st.Page(page_formations, title="Formations", icon="🎓"),
             ],
-            "Outils": [st.Page(page_tools, title="Init DB", icon="🛠️")],
+            "Outils": [
+                st.Page(page_import_csv, title="Import CSV", icon="📥"),
+                st.Page(page_tools, title="Init DB", icon="🛠️"),
+            ],
             "Paramètres": [
+                st.Page(page_help, title="📘 Aide", icon="📘"),
                 st.Page(page_about, title="À propos", icon="ℹ️"),
                 st.Page(page_preferences, title="Préférences", icon="⚙️"),
             ],
@@ -532,12 +492,14 @@ else:
     st.sidebar.image(str(logo_path))
     choice = st.sidebar.selectbox(
         "Navigation",
-        ["Stagiaires", "Sections", "Formations", "Init DB", "À propos", "Préférences"],
+        ["Stagiaires", "Sections", "Formations", "Import CSV", "📘 Aide", "Init DB", "À propos", "Préférences"],
     )
     {
         "Stagiaires": page_stagiaires,
         "Sections": page_sections,
         "Formations": page_formations,
+        "Import CSV": page_import_csv,
+        "📘 Aide": page_help,
         "Init DB": page_tools,
         "À propos": page_about,
         "Préférences": page_preferences,

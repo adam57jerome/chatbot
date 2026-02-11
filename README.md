@@ -148,3 +148,37 @@ alembic upgrade head
 
 Dans ce dépôt, la migration est déjà fournie :
 - `alembic/versions/0002_add_formations_and_trainee_wish.py`
+
+## Import CSV
+
+Une page **Import CSV** est disponible dans le menu Streamlit (**Outils > Import CSV**).
+
+Fonctionnalités :
+- Upload `.csv` avec options séparateur/encodage/présence d'en-tête
+- Prévisualisation des données
+- Mapping des colonnes vers les champs stagiaire
+- Validation des lignes + détection doublons
+- Stratégies doublons: `skip` / `update` / `strict`
+- Rapport final téléchargeable (`rapport_import.csv`)
+
+Exemple de CSV:
+
+```csv
+nom,prenom,email,telephone,section_code,formation_code,notes
+Dupont,Jean,jean.dupont@example.com,0600000001,AC1025,MAB,Profil reconversion
+Martin,Lea,lea.martin@example.com,0600000002,AC1025,TMB,Disponible le matin
+```
+
+## Aide en ligne
+
+Une page **📘 Aide** est disponible dans la navigation Streamlit.
+- Guide complet par rubrique (stagiaires, sections, formations, import CSV, base de données)
+- Aide contextuelle sur les champs/actions importantes (`help=`)
+
+### Commandes utiles (Import + Aide)
+
+```powershell
+pip install -r requirements.txt
+pytest -q
+streamlit run streamlit_app.py --server.port 8501
+```
