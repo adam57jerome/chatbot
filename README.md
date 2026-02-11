@@ -1,6 +1,6 @@
-# Questionnaire AC Desktop (PySide6 + SQLite)
+# Questionnaire AC Web (Streamlit + SQLite)
 
-Application Windows Desktop pour la gestion de questionnaires d’entrée:
+Application web pour la gestion de questionnaires d’entrée:
 - saisie manuelle des réponses,
 - analyses par section et par stagiaire,
 - comparatifs de groupe,
@@ -22,7 +22,11 @@ source .venv/bin/activate  # Windows: .venv\\Scripts\\activate
 pip install -r requirements.txt
 ```
 
-## Lancer l’application
+## Lancer l’application web
+```bash
+streamlit run web_app.py
+```
+ou
 ```bash
 python app.py
 ```
@@ -61,13 +65,6 @@ Au premier lancement, un seed est injecté automatiquement:
   - menu Aide
   - touche F1
 
-## Build Windows (EXE)
-```bash
-pyinstaller QuestionnaireAC.spec --noconfirm
-```
-Résultat attendu:
-- `dist/QuestionnaireAC.exe`
-
 ## Tests
 ```bash
 pytest
@@ -89,11 +86,11 @@ Le contenu de l’aide se trouve dans:
 Si un seed échoue (ex: crash au démarrage), supprimez `data/questionnaire.db` puis relancez l’application pour reconstruire la base proprement.
 
 
-## Lancer sous Windows (run.bat)
+## Lancer avec script (Windows)
 ```bat
 run.bat
 ```
-Le script crée/active `.venv`, installe les dépendances puis lance `app.py` et garde la console ouverte.
+Le script crée/active `.venv`, installe les dépendances puis lance la version web (`streamlit run web_app.py`).
 
 ## Version Web (recommandée pour affichage graphique)
 L’application propose maintenant une interface web orientée dashboard (CSS + graphiques):
