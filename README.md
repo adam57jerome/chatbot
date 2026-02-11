@@ -90,3 +90,14 @@ pytest
 - Validation serveur: Pydantic + contraintes SQL.
 - Gestion des erreurs SQL de type `UNIQUE` avec message utilisateur lisible.
 - Aucun service externe requis.
+
+
+## Interface alternative Streamlit (optionnelle)
+
+Vous pouvez aussi utiliser une interface Streamlit locale (sans clé API), connectée à la même base SQLite:
+
+```powershell
+streamlit run streamlit_app.py --server.port 8501
+```
+
+> Cette interface est indépendante de FastAPI et utilise typiquement le port `8501`.
