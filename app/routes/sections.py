@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from app import crud, schemas
 from app.db import get_db
-from app.main import templates
+from app.web import templates
 
 router = APIRouter(prefix="/sections", tags=["sections"])
 
@@ -99,6 +99,7 @@ def edit_section_form(section_id: int, request: Request, db: Session = Depends(g
             "errors": {},
             "in_section": crud.trainees_in_section(db, section_id),
             "available": crud.trainees_available_for_assignment(db, section_id),
+            "section_id": section_id,
         },
     )
 
@@ -141,6 +142,7 @@ def update_section(
             "errors": errors,
             "in_section": crud.trainees_in_section(db, section_id),
             "available": crud.trainees_available_for_assignment(db, section_id),
+            "section_id": section_id,
         },
         status_code=400,
     )

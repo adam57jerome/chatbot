@@ -1,18 +1,12 @@
 from __future__ import annotations
 
-from pathlib import Path
-
 from fastapi import FastAPI, Request
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
 
 from app.routes import sections, trainees
-
-BASE_DIR = Path(__file__).resolve().parent
-
-templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
+from app.web import BASE_DIR
 
 app = FastAPI(title="Gestion des stagiaires")
 app.add_middleware(SessionMiddleware, secret_key="dev-secret-change-me")

@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from app import crud, schemas
 from app.db import get_db
-from app.main import templates
+from app.web import templates
 
 router = APIRouter(prefix="/stagiaires", tags=["stagiaires"])
 
