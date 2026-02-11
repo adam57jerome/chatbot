@@ -101,3 +101,19 @@ streamlit run streamlit_app.py --server.port 8501
 ```
 
 > Cette interface est indépendante de FastAPI et utilise typiquement le port `8501`.
+
+
+## Initialisation BDD
+
+### Option 1 (auto via application)
+- FastAPI: les tables sont créées au démarrage (`init_db()` appelé au startup).
+- Streamlit: les tables sont créées au démarrage et un bouton **Initialiser la base** est disponible.
+
+### Option 2 (migrations Alembic recommandées)
+```powershell
+alembic upgrade head
+```
+
+### Vérifier le fichier SQLite utilisé
+- Chemin par défaut: `data/app.db` (chemin absolu résolu automatiquement).
+- Vous pouvez surcharger avec `DATABASE_URL`.

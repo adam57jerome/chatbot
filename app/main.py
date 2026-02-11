@@ -7,10 +7,16 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from app.routes import sections, trainees
 from app.web import BASE_DIR
+from app.db import init_db
 
 app = FastAPI(title="Gestion des stagiaires")
 app.add_middleware(SessionMiddleware, secret_key="dev-secret-change-me")
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
+
+
+@app.on_event("startup")
+def startup_init_db() -> None:
+    init_db()
 
 
 @app.get("/")

@@ -1,23 +1,45 @@
 from __future__ import annotations
 
 from datetime import date
+from typing import Callable, TypeVar
 
 import streamlit as st
 from pydantic import ValidationError
 from sqlalchemy import or_, select
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, OperationalError
 
-from app.db import SessionLocal
+from app.db import SessionLocal, get_sqlite_db_path, init_db
 from app.models import Section, Stagiaire
 from app.schemas import SectionCreate, StagiaireCreate
+
+T = TypeVar("T")
 
 st.set_page_config(page_title="Gestion des stagiaires", layout="wide")
 st.title("Gestion des stagiaires (Streamlit)")
 st.caption("Application locale, sans clé API.")
 
+# Initialisation proactive: création des tables si base vide.
+init_db()
+
+db_path = get_sqlite_db_path()
+if db_path:
+    st.caption(f"SQLite utilisé: {db_path}")
+
+
+def safe_query(action: Callable[[], T]) -> T:
+    """Exécute une requête et auto-initialise la DB si table absente."""
+    try:
+        return action()
+    except OperationalError as exc:
+        message = str(exc).lower()
+        if "no such table" in message:
+            init_db()
+            return action()
+        raise
+
 
 def load_sections(db):
-    return db.scalars(select(Section).order_by(Section.code)).all()
+    return safe_query(lambda: db.scalars(select(Section).order_by(Section.code)).all())
 
 
 def load_trainees(db, query: str):
@@ -25,7 +47,17 @@ def load_trainees(db, query: str):
     if query:
         q = f"%{query.strip()}%"
         stmt = stmt.where(or_(Stagiaire.nom.ilike(q), Stagiaire.prenom.ilike(q), Stagiaire.email.ilike(q)))
-    return db.scalars(stmt).all()
+    return safe_query(lambda: db.scalars(stmt).all())
+
+
+col_a, col_b = st.columns([1, 2])
+with col_a:
+    if st.button("Initialiser la base"):
+        init_db()
+        st.success("Base initialisée (tables créées si nécessaire).")
+
+with col_b:
+    st.info("Si la base est vide, les tables sont créées automatiquement au démarrage.")
 
 
 tab1, tab2 = st.tabs(["Stagiaires", "Sections"])
