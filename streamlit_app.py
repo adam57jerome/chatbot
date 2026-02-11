@@ -16,8 +16,13 @@ from app.schemas import SectionCreate, StagiaireCreate, StagiaireUpdate
 T = TypeVar("T")
 
 st.set_page_config(page_title="Gestion des stagiaires", layout="wide")
-st.title("Gestion des stagiaires (Streamlit)")
-st.caption("Application locale, sans clé API.")
+logo_path = "app/static/logo_acces_vii.svg"
+head_left, head_right = st.columns([1, 6])
+with head_left:
+    st.image(logo_path, width=110)
+with head_right:
+    st.title("Gestion des stagiaires (Streamlit)")
+    st.caption("Application locale, sans clé API.")
 
 # Initialisation proactive: création des tables si base vide.
 init_db()

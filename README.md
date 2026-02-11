@@ -21,6 +21,7 @@ Projet complet **100% local** pour gérer des stagiaires et leur affectation à 
 - Recherche + filtres
 - Pagination simple (50 éléments/page)
 - Messages flash succès/erreur
+- Le logo **Accès VII** est affiché dans l'interface (FastAPI + Streamlit).
 
 ## Arborescence
 
