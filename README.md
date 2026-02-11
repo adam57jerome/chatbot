@@ -94,3 +94,22 @@ Si un seed échoue (ex: crash au démarrage), supprimez `data/questionnaire.db` 
 run.bat
 ```
 Le script crée/active `.venv`, installe les dépendances puis lance `app.py` et garde la console ouverte.
+
+## Version Web (recommandée pour affichage graphique)
+L’application propose maintenant une interface web orientée dashboard (CSS + graphiques):
+
+```bash
+streamlit run web_app.py
+```
+
+Fonctions disponibles en web:
+- saisie manuelle par section/stagiaire,
+- synthèse groupe (moyennes, bar charts),
+- vue stagiaire (notes par section),
+- import Excel avec écran de récapitulatif, gestion des conflits et diagnostics.
+
+
+## Lancer la version Web sous Windows
+```bat
+run_web.bat
+```
