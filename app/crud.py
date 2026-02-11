@@ -75,6 +75,11 @@ def get_stagiaire(db: Session, trainee_id: int) -> Stagiaire | None:
     return db.get(Stagiaire, trainee_id)
 
 
+def get_trainee_by_id(db: Session, trainee_id: int) -> Stagiaire | None:
+    """Alias explicite pour l'UI Streamlit."""
+    return get_stagiaire(db, trainee_id)
+
+
 def create_stagiaire(db: Session, payload: StagiaireCreate) -> Stagiaire:
     trainee = Stagiaire(**payload.model_dump())
     db.add(trainee)
@@ -91,6 +96,14 @@ def update_stagiaire(db: Session, trainee: Stagiaire, payload: StagiaireUpdate) 
     return trainee
 
 
+def update_trainee(db: Session, trainee_id: int, payload: StagiaireUpdate) -> Stagiaire | None:
+    """Met à jour un stagiaire par id et renvoie l'entité mise à jour."""
+    trainee = get_trainee_by_id(db, trainee_id)
+    if not trainee:
+        return None
+    return update_stagiaire(db, trainee, payload)
+
+
 def delete_stagiaire(db: Session, trainee: Stagiaire) -> None:
     db.delete(trainee)
     db.commit()
@@ -104,7 +117,9 @@ def trainees_in_section(db: Session, section_id: int):
 
 def trainees_available_for_assignment(db: Session, section_id: int):
     return db.scalars(
-        select(Stagiaire).where(or_(Stagiaire.section_id.is_(None), Stagiaire.section_id != section_id)).order_by(Stagiaire.nom, Stagiaire.prenom)
+        select(Stagiaire)
+        .where(or_(Stagiaire.section_id.is_(None), Stagiaire.section_id != section_id))
+        .order_by(Stagiaire.nom, Stagiaire.prenom)
     ).all()
 
 

@@ -14,6 +14,7 @@ Projet complet **100% local** pour gérer des stagiaires et leur affectation à 
 
 ## Fonctionnalités principales
 - CRUD stagiaires
+- Modifier un stagiaire : bouton **Modifier** dans la liste des stagiaires.
 - CRUD sections
 - Affectation d'un stagiaire à 0 ou 1 section
 - Règle métier: suppression d'une section => `section_id` des stagiaires passe à `NULL`
