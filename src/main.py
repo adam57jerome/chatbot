@@ -33,7 +33,8 @@ from matplotlib.figure import Figure
 from sqlalchemy import select
 
 from .database import Base, SessionLocal, engine
-from .excel_import import import_excel_to_db, parse_excel_preview
+from .excel_importer import parse_excel_preview
+from .import_service import import_excel_to_db
 from .models import Question, Questionnaire, Section, Session as CohortSession, Trainee
 from .services import (
     color_for_score,
@@ -80,8 +81,8 @@ class ExcelImportDialog(QDialog):
         form = QFormLayout()
         self.questionnaire_name = QLineEdit()
         self.session_combo = QComboBox()
-        self.import_answers_cb = QCheckBox("Importer aussi les réponses existantes")
-        self.import_answers_cb.setChecked(False)
+        self.import_answers_cb = QCheckBox("Importer les réponses existantes des stagiaires")
+        self.import_answers_cb.setChecked(True)
 
         form.addRow("Questionnaire", self.questionnaire_name)
         form.addRow("Session", self.session_combo)
@@ -141,7 +142,7 @@ class ExcelImportDialog(QDialog):
             session_code = Path(self.preview.source_path).stem.upper().replace(" ", "_")[:30]
 
         try:
-            questionnaire, session = import_excel_to_db(
+            questionnaire, session, warnings = import_excel_to_db(
                 self.db,
                 self.preview,
                 questionnaire_name=q_name,
@@ -157,6 +158,8 @@ class ExcelImportDialog(QDialog):
             "Import terminé",
             f"Questionnaire créé: {questionnaire.name}\nSession: {session.code}",
         )
+        if warnings:
+            QMessageBox.warning(self, "Import Excel", "Warnings détectés:\n- " + "\n- ".join(warnings[:20]))
         self.accept()
 
 

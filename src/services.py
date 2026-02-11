@@ -23,7 +23,13 @@ def normalize_answer(value: str | None, ignore_accents: bool = True) -> str:
 
 
 def score_answer(response: str | None, expected: str | None) -> int:
-    return int(normalize_answer(response) == normalize_answer(expected))
+    r = normalize_answer(response)
+    br = normalize_answer(expected)
+    if not r:
+        return 0
+    if br not in {"a", "b", "c", "d"}:
+        return 0
+    return int(r == br)
 
 
 def parse_question_block(text: str) -> list[tuple[int, str]]:
@@ -80,7 +86,7 @@ def ensure_seed_data(db: Session) -> None:
                     questionnaire_id=questionnaire.id,
                     section_id=section.id,
                     numero=numero,
-                    bonne_reponse=good.lower(),
+                    bonne_reponse=(good.lower() if good else None),
                 )
             )
         ordre += 1

@@ -39,7 +39,7 @@ Au premier lancement, un seed est injecté automatiquement:
   - création session
   - import rapide de stagiaires (copier/coller)
   - ajout de questions en bloc (`1=a`, `2=c`, ...)
-  - import Excel `.xlsx` (questionnaire/sections/questions/stagiaires + réponses optionnelles)
+  - import Excel `.xlsx` (questionnaire + sections + questions + stagiaires + réponses + scores recalculés)
 - **Section**:
   - workflow Session → Questionnaire → Section → Stagiaire
   - grille `Numero | Bonne réponse | Réponse saisie | Score`

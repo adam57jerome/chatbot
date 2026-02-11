@@ -43,7 +43,7 @@ class Question(Base):
     section_id: Mapped[int] = mapped_column(ForeignKey("sections.id", ondelete="CASCADE"), nullable=False)
     numero: Mapped[int] = mapped_column(Integer, nullable=False)
     label: Mapped[str | None] = mapped_column(Text, nullable=True)
-    bonne_reponse: Mapped[str] = mapped_column(String(10), nullable=False)
+    bonne_reponse: Mapped[str | None] = mapped_column(String(10), nullable=True)
     points: Mapped[int] = mapped_column(Integer, default=1)
 
     questionnaire = relationship("Questionnaire", back_populates="questions")
