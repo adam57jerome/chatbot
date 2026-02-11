@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import date
 
-from pydantic import BaseModel, ConfigDict, EmailStr, field_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, ValidationInfo, field_validator
 
 
 class SectionBase(BaseModel):
@@ -18,6 +18,14 @@ class SectionBase(BaseModel):
         value = value.strip()
         if not value:
             raise ValueError("Ce champ est obligatoire.")
+        return value
+
+    @field_validator("date_fin")
+    @classmethod
+    def end_date_must_be_after_start(cls, value: date | None, info: ValidationInfo) -> date | None:
+        date_debut = info.data.get("date_debut")
+        if value and date_debut and value < date_debut:
+            raise ValueError("La date de fin doit être postérieure ou égale à la date de début.")
         return value
 
 

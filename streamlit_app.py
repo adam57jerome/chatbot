@@ -11,7 +11,7 @@ from sqlalchemy.exc import IntegrityError, OperationalError
 from app import crud
 from app.db import SessionLocal, get_sqlite_db_path, init_db
 from app.models import Section, Stagiaire
-from app.schemas import SectionCreate, StagiaireCreate, StagiaireUpdate
+from app.schemas import SectionCreate, SectionUpdate, StagiaireCreate, StagiaireUpdate
 
 T = TypeVar("T")
 
@@ -24,26 +24,22 @@ with head_right:
     st.title("Gestion des stagiaires (Streamlit)")
     st.caption("Application locale, sans clé API.")
 
-# Initialisation proactive: création des tables si base vide.
 init_db()
-
 db_path = get_sqlite_db_path()
 if db_path:
     st.caption(f"SQLite utilisé: {db_path}")
 
-if "trainee_screen" not in st.session_state:
-    st.session_state.trainee_screen = "list"
-if "edit_trainee_id" not in st.session_state:
-    st.session_state.edit_trainee_id = None
+st.session_state.setdefault("trainee_screen", "list")
+st.session_state.setdefault("edit_trainee_id", None)
+st.session_state.setdefault("section_screen", "list")
+st.session_state.setdefault("edit_section_id", None)
 
 
 def safe_query(action: Callable[[], T]) -> T:
-    """Exécute une requête et auto-initialise la DB si table absente."""
     try:
         return action()
     except OperationalError as exc:
-        message = str(exc).lower()
-        if "no such table" in message:
+        if "no such table" in str(exc).lower():
             init_db()
             return action()
         raise
@@ -61,40 +57,32 @@ def load_trainees(db, query: str):
     return safe_query(lambda: db.scalars(stmt).all())
 
 
-def set_screen(screen: str, trainee_id: int | None = None) -> None:
+def set_trainee_screen(screen: str, trainee_id: int | None = None) -> None:
     st.session_state.trainee_screen = screen
     st.session_state.edit_trainee_id = trainee_id
 
 
-def render_trainee_form(
-    *,
-    db,
-    mode: str,
-    sections: list[Section],
-    trainee: Stagiaire | None = None,
-) -> None:
+def set_section_screen(screen: str, section_id: int | None = None) -> None:
+    st.session_state.section_screen = screen
+    st.session_state.edit_section_id = section_id
+
+
+def render_trainee_form(*, db, mode: str, sections: list[Section], trainee: Stagiaire | None = None) -> None:
     is_edit = mode == "edit"
-    title = "Modifier stagiaire" if is_edit else "Ajouter un stagiaire"
-    st.markdown(f"### {title}")
+    st.markdown(f"### {'Modifier stagiaire' if is_edit else 'Ajouter un stagiaire'}")
 
     section_options = {"Aucune section": None} | {f"{s.code} - {s.nom}": s.id for s in sections}
+    labels = list(section_options.keys())
+    current = trainee.section_id if trainee else None
+    default_label = next((label for label, sid in section_options.items() if sid == current), "Aucune section")
 
-    current_section_id = trainee.section_id if trainee else None
-    section_labels = list(section_options.keys())
-    default_label = next(
-        (label for label, sid in section_options.items() if sid == current_section_id),
-        "Aucune section",
-    )
-    default_index = section_labels.index(default_label)
-
-    form_key = f"trainee_form_{mode}_{trainee.id if trainee else 'new'}"
-    with st.form(form_key):
+    with st.form(f"trainee_form_{mode}_{trainee.id if trainee else 'new'}"):
         c1, c2 = st.columns(2)
         nom = c1.text_input("Nom *", value=trainee.nom if trainee else "")
         prenom = c2.text_input("Prénom *", value=trainee.prenom if trainee else "")
         email = c1.text_input("Email", value=trainee.email or "" if trainee else "")
         telephone = c2.text_input("Téléphone", value=trainee.telephone or "" if trainee else "")
-        section_label = st.selectbox("Section", section_labels, index=default_index)
+        section_label = st.selectbox("Section", labels, index=labels.index(default_label))
         notes = st.text_area("Notes", value=trainee.notes or "" if trainee else "")
 
         save_col, cancel_col = st.columns(2)
@@ -102,15 +90,14 @@ def render_trainee_form(
         cancel = cancel_col.form_submit_button("Annuler")
 
         if cancel:
-            set_screen("list", None)
+            set_trainee_screen("list")
             st.rerun()
 
         if save:
             section_id = section_options[section_label]
-            if section_id is not None and not crud.get_section(db, section_id):
+            if section_id is not None and not crud.get_section_by_id(db, section_id):
                 st.error("La section sélectionnée n'existe pas.")
                 return
-
             try:
                 if is_edit and trainee is not None:
                     payload = StagiaireUpdate(
@@ -121,8 +108,7 @@ def render_trainee_form(
                         notes=notes or None,
                         section_id=section_id,
                     )
-                    updated = crud.update_trainee(db, trainee.id, payload)
-                    if not updated:
+                    if not crud.update_trainee(db, trainee.id, payload):
                         st.error("Stagiaire introuvable.")
                         return
                     st.success("Stagiaire mis à jour avec succès.")
@@ -137,15 +123,124 @@ def render_trainee_form(
                     )
                     crud.create_stagiaire(db, payload)
                     st.success("Stagiaire créé.")
-
-                set_screen("list", None)
+                set_trainee_screen("list")
                 st.rerun()
             except ValidationError as exc:
-                errors = ", ".join(err["msg"] for err in exc.errors())
-                st.error(f"Validation: {errors}")
+                st.error(f"Validation: {', '.join(err['msg'] for err in exc.errors())}")
             except IntegrityError:
                 db.rollback()
                 st.error("Erreur: email déjà utilisé par un autre stagiaire.")
+
+
+def render_section_form(*, db, mode: str, section: Section | None = None) -> None:
+    is_edit = mode == "edit"
+    section_id = section.id if section else None
+    st.markdown(f"### {'Modifier section' if is_edit else 'Ajouter une section'}")
+
+    if is_edit and not section:
+        st.error("Section introuvable.")
+        set_section_screen("list")
+        return
+
+    with st.form(f"section_form_{mode}_{section_id or 'new'}"):
+        c1, c2 = st.columns(2)
+        code = c1.text_input("Code *", value=section.code if section else "")
+        nom = c2.text_input("Nom *", value=section.nom if section else "")
+
+        has_date_debut = c1.checkbox("Renseigner date début", value=section.date_debut is not None if section else False)
+        has_date_fin = c2.checkbox("Renseigner date fin", value=section.date_fin is not None if section else False)
+
+        date_debut = c1.date_input("Date début", value=section.date_debut or date.today() if section else date.today(), disabled=not has_date_debut)
+        date_fin = c2.date_input("Date fin", value=section.date_fin or date.today() if section else date.today(), disabled=not has_date_fin)
+
+        description = st.text_area("Description", value=section.description or "" if section else "")
+
+        save_col, cancel_col = st.columns(2)
+        save = save_col.form_submit_button("Enregistrer" if is_edit else "Créer")
+        cancel = cancel_col.form_submit_button("Annuler")
+
+        if cancel:
+            set_section_screen("list")
+            st.rerun()
+
+        if save:
+            try:
+                payload = (SectionUpdate if is_edit else SectionCreate)(
+                    code=code,
+                    nom=nom,
+                    date_debut=date_debut if has_date_debut else None,
+                    date_fin=date_fin if has_date_fin else None,
+                    description=description or None,
+                )
+                if is_edit and section_id is not None:
+                    if not crud.update_section(db, section_id, payload):
+                        st.error("Section introuvable.")
+                        return
+                    st.success("Section mise à jour avec succès.")
+                else:
+                    crud.create_section(db, payload)
+                    st.success("Section créée.")
+                set_section_screen("list")
+                st.rerun()
+            except ValidationError as exc:
+                st.error(f"Validation: {', '.join(err['msg'] for err in exc.errors())}")
+            except IntegrityError:
+                db.rollback()
+                st.error("Erreur: code section déjà utilisé.")
+
+
+def render_section_assignments(db, section_id: int) -> None:
+    st.markdown("### Gestion des stagiaires rattachés")
+    include_other = st.checkbox(
+        "Inclure aussi les stagiaires d'autres sections dans les disponibles",
+        value=True,
+        key=f"include_other_{section_id}",
+    )
+
+    in_section = crud.list_trainees_in_section(db, section_id)
+    available = crud.list_trainees_available_for_section(db, section_id, include_other_sections=include_other)
+
+    col_in, col_av = st.columns(2)
+
+    with col_in:
+        st.markdown("**A) Stagiaires dans cette section**")
+        if not in_section:
+            st.info("Aucun stagiaire dans cette section.")
+        for trainee in in_section:
+            row = st.columns([3, 1])
+            row[0].write(f"{trainee.nom} {trainee.prenom} ({trainee.email or 'sans email'})")
+            if row[1].button("Retirer", key=f"unassign_{section_id}_{trainee.id}"):
+                if crud.unassign_trainee(db, trainee.id):
+                    st.success(f"{trainee.prenom} {trainee.nom} retiré de la section.")
+                else:
+                    st.error("Impossible de retirer ce stagiaire.")
+                st.rerun()
+
+    with col_av:
+        st.markdown("**B) Stagiaires disponibles**")
+        if not available:
+            st.info("Aucun stagiaire disponible.")
+        for trainee in available:
+            row = st.columns([3, 1])
+            section_label = f" (actuel: {trainee.section.code})" if trainee.section else ""
+            row[0].write(f"{trainee.nom} {trainee.prenom}{section_label}")
+            if row[1].button("Ajouter", key=f"assign_{section_id}_{trainee.id}"):
+                if crud.assign_trainee_to_section(db, trainee.id, section_id):
+                    st.success(f"{trainee.prenom} {trainee.nom} ajouté à la section.")
+                else:
+                    st.error("Impossible d'ajouter ce stagiaire.")
+                st.rerun()
+
+    st.markdown("### Suppression de section")
+    confirm_key = f"confirm_delete_{section_id}"
+    if st.checkbox("Confirmer la suppression de cette section", key=confirm_key):
+        if st.button("🗑️ Supprimer section", key=f"delete_section_{section_id}"):
+            if crud.delete_section_safely(db, section_id):
+                st.success("Section supprimée. Les stagiaires ont été désaffectés.")
+                set_section_screen("list")
+            else:
+                st.error("Section introuvable.")
+            st.rerun()
 
 
 col_a, col_b = st.columns([1, 2])
@@ -153,7 +248,6 @@ with col_a:
     if st.button("Initialiser la base"):
         init_db()
         st.success("Base initialisée (tables créées si nécessaire).")
-
 with col_b:
     st.info("Si la base est vide, les tables sont créées automatiquement au démarrage.")
 
@@ -166,7 +260,7 @@ with SessionLocal() as db:
         top_left, top_right = st.columns([2, 1])
         q = top_left.text_input("Recherche (nom/prénom/email)", key="q")
         if top_right.button("➕ Nouveau stagiaire"):
-            set_screen("create", None)
+            set_trainee_screen("create")
             st.rerun()
 
         trainees = load_trainees(db, q)
@@ -174,12 +268,7 @@ with SessionLocal() as db:
 
         if st.session_state.trainee_screen == "edit":
             trainee = crud.get_trainee_by_id(db, st.session_state.edit_trainee_id)
-            if not trainee:
-                st.error("Stagiaire introuvable.")
-                set_screen("list", None)
-            else:
-                render_trainee_form(db=db, mode="edit", sections=sections, trainee=trainee)
-
+            render_trainee_form(db=db, mode="edit", sections=sections, trainee=trainee)
         elif st.session_state.trainee_screen == "create":
             render_trainee_form(db=db, mode="create", sections=sections)
 
@@ -192,7 +281,6 @@ with SessionLocal() as db:
             header[3].markdown("**Téléphone**")
             header[4].markdown("**Section**")
             header[5].markdown("**Action**")
-
             for trainee in trainees:
                 cols = st.columns([1.2, 1.2, 2.2, 1.4, 1.8, 1])
                 cols[0].write(trainee.nom)
@@ -200,59 +288,53 @@ with SessionLocal() as db:
                 cols[2].write(trainee.email or "-")
                 cols[3].write(trainee.telephone or "-")
                 cols[4].write(trainee.section.code if trainee.section else "Aucune section")
-                if cols[5].button("✏️ Modifier", key=f"edit_{trainee.id}"):
-                    set_screen("edit", trainee.id)
+                if cols[5].button("✏️ Modifier", key=f"edit_trainee_{trainee.id}"):
+                    set_trainee_screen("edit", trainee.id)
                     st.rerun()
         else:
             st.info("Aucun stagiaire trouvé.")
 
     with tab2:
-        st.subheader("Liste des sections")
+        st.subheader("Sections")
+        search_col, add_col = st.columns([2, 1])
+        q_section = search_col.text_input("Recherche section (code/nom)", key="q_section")
+        if add_col.button("➕ Nouvelle section"):
+            set_section_screen("create")
+            st.rerun()
+
         sections = load_sections(db)
+        if q_section:
+            q_filter = q_section.strip().lower()
+            sections = [s for s in sections if q_filter in s.code.lower() or q_filter in s.nom.lower()]
+
+        if st.session_state.section_screen == "edit":
+            section = crud.get_section_by_id(db, st.session_state.edit_section_id)
+            render_section_form(db=db, mode="edit", section=section)
+            if section:
+                render_section_assignments(db, section.id)
+        elif st.session_state.section_screen == "create":
+            render_section_form(db=db, mode="create")
+
+        st.markdown("### Liste des sections")
         if sections:
-            st.dataframe(
-                [
-                    {
-                        "ID": s.id,
-                        "Code": s.code,
-                        "Nom": s.nom,
-                        "Date début": s.date_debut,
-                        "Date fin": s.date_fin,
-                        "Stagiaires": len(s.stagiaires),
-                    }
-                    for s in sections
-                ],
-                use_container_width=True,
-            )
+            header = st.columns([0.9, 1.5, 2, 1.2, 1.2, 1.2, 1])
+            header[0].markdown("**ID**")
+            header[1].markdown("**Code**")
+            header[2].markdown("**Nom**")
+            header[3].markdown("**Début**")
+            header[4].markdown("**Fin**")
+            header[5].markdown("**Stagiaires**")
+            header[6].markdown("**Action**")
+            for section in sections:
+                row = st.columns([0.9, 1.5, 2, 1.2, 1.2, 1.2, 1])
+                row[0].write(section.id)
+                row[1].write(section.code)
+                row[2].write(section.nom)
+                row[3].write(section.date_debut or "-")
+                row[4].write(section.date_fin or "-")
+                row[5].write(len(section.stagiaires))
+                if row[6].button("✏️ Modifier", key=f"edit_section_{section.id}"):
+                    set_section_screen("edit", section.id)
+                    st.rerun()
         else:
             st.info("Aucune section.")
-
-        st.markdown("### Ajouter une section")
-        with st.form("create_section", clear_on_submit=True):
-            c1, c2 = st.columns(2)
-            code = c1.text_input("Code *")
-            nom = c2.text_input("Nom *")
-            has_date_debut = c1.checkbox("Renseigner date début", value=False)
-            has_date_fin = c2.checkbox("Renseigner date fin", value=False)
-            date_debut = c1.date_input("Date début", value=date.today(), disabled=not has_date_debut)
-            date_fin = c2.date_input("Date fin", value=date.today(), disabled=not has_date_fin)
-            description = st.text_area("Description")
-            submitted_section = st.form_submit_button("Créer")
-
-            if submitted_section:
-                try:
-                    payload = SectionCreate(
-                        code=code,
-                        nom=nom,
-                        date_debut=date_debut if has_date_debut else None,
-                        date_fin=date_fin if has_date_fin else None,
-                        description=description or None,
-                    )
-                    crud.create_section(db, payload)
-                    st.success("Section créée.")
-                    st.rerun()
-                except ValidationError as exc:
-                    st.error(f"Validation: {exc.errors()[0]['msg']}")
-                except IntegrityError:
-                    db.rollback()
-                    st.error("Erreur: code section déjà utilisé.")
