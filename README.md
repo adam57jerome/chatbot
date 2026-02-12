@@ -182,3 +182,24 @@ pip install -r requirements.txt
 pytest -q
 streamlit run streamlit_app.py --server.port 8501
 ```
+
+## Module QCM
+
+Le module QCM ajoute :
+- gestion des **questionnaires**
+- gestion des **questions QCM** avec résultat attendu
+- **passages stagiaires** avec correction automatique
+- score brut + conversion **note sur 20** (arrondie à 1 décimale)
+
+### Calcul de note
+- 1 point si réponse stagiaire normalisée == résultat attendu normalisé
+- 0 sinon
+- `note_sur_20 = (score_brut / total_questions) * 20`
+- si `total_questions == 0`, alors note = `0`
+
+### Commandes
+
+```powershell
+alembic upgrade head
+streamlit run streamlit_app.py --server.port 8501
+```
