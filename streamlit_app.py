@@ -40,6 +40,7 @@ from app.schemas import (
     StagiaireCreate,
     StagiaireUpdate,
 )
+from app.utils.json_safe import find_first_non_serializable_path, to_jsonable
 from ui.layout import inject_app_css, render_header, toast
 
 st.set_page_config(page_title="Gestion Stagiaires", layout="wide")
@@ -452,6 +453,34 @@ def page_synthese_stagiaire() -> None:
             "bottom3_questionnaires": summary["bottom3"],
         }
 
+        # Diagnostic JSON (pour identifier les objets non sérialisables)
+        try:
+            json.dumps(payload, ensure_ascii=False, indent=2)
+        except TypeError:
+            issue = find_first_non_serializable_path(payload)
+            if issue:
+                issue_path, issue_type = issue
+                st.warning(f"Diagnostic sérialisation: {issue_path} -> {issue_type}")
+
+        fallbacks: list[tuple[str, str, str]] = []
+
+        def _on_fallback(path: str, typ: str, _value: str) -> None:
+            fallbacks.append((path, typ, _value))
+
+        payload_json = to_jsonable(payload, on_fallback=_on_fallback)
+
+        try:
+            payload_json_text = json.dumps(payload_json, ensure_ascii=False, indent=2)
+        except TypeError:
+            st.error("Certaines données n'ont pas pu être sérialisées proprement. Affichage simplifié activé.")
+            payload_json_text = json.dumps(payload_json, ensure_ascii=False, indent=2, default=str)
+
+        if fallbacks:
+            st.warning(
+                "Fallback de sérialisation appliqué pour: "
+                + ", ".join(f"{path}({typ})" for path, typ, _ in fallbacks[:5])
+            )
+
         prompt = (
             "Tu es un formateur expert. À partir des données ci-dessous, rédige :\n"
             "1) une synthèse courte (5-8 lignes),\n"
@@ -459,8 +488,9 @@ def page_synthese_stagiaire() -> None:
             "3) points forts / points à améliorer,\n"
             "4) 2 à 5 recommandations d'entraînement concrètes,\n"
             "5) un plan d'accompagnement.\n"
-            "Contraintes: ton professionnel, adapté à un adulte en formation, factuel, sans jugement.\n\n"
-            f"DONNÉES:\n{json.dumps(payload, ensure_ascii=False, indent=2)}"
+            "Contraintes: ton professionnel, adapté à un adulte en formation, factuel, sans jugement.\n"
+            "Évite les jugements de valeur et propose un plan d'accompagnement progressif.\n\n"
+            f"DONNÉES:\n{payload_json_text}"
         )
 
         st.markdown("#### Bloc ChatGPT (copier-coller)")
