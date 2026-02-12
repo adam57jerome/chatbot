@@ -10,6 +10,7 @@
   <li>Notes: {{ trainee.notes or '-' }}</li>
 </ul>
 <a class="btn" href="/stagiaires/{{ trainee.id }}/edit">Modifier</a>
+<a class="btn" href="http://127.0.0.1:8501/?summary_trainee={{ trainee.id }}" target="_blank">Voir synthèse QCM</a>
 <form method="post" action="/stagiaires/{{ trainee.id }}/delete" onsubmit="return confirm('Supprimer ce stagiaire ?');">
   <button class="btn danger" type="submit">Supprimer</button>
 </form>

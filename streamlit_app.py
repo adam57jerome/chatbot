@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import json
 from datetime import date
 from pathlib import Path
 from typing import Callable, TypeVar
 
+import matplotlib.pyplot as plt
 import streamlit as st
 from pydantic import ValidationError
 from sqlalchemy import or_, select
@@ -13,13 +15,14 @@ from app import crud
 from app.db import SessionLocal, get_sqlite_db_path, init_db
 from app.help_texts import AIDE_SECTIONS, CSV_EXAMPLE, HELP_TEXTS
 from app.importer import ImportOptions, apply_import, parse_csv, report_to_csv, validate_rows
-from app.models import Formation, QCMQuestion, Questionnaire, Section, Stagiaire
+from app.models import Formation, Section, Stagiaire
 from app.qcm_service import (
     add_question,
     create_questionnaire,
     delete_question,
     delete_questionnaire,
     get_attempt_detail,
+    get_trainee_qcm_summary,
     list_attempts,
     list_questionnaires,
     list_questions,
@@ -90,11 +93,12 @@ def render_trainee_form(*, db, mode: str, sections: list[Section], formations: l
     is_edit = mode == "edit"
     st.markdown("<div class='app-card'>", unsafe_allow_html=True)
     st.markdown(f"#### {'Modifier stagiaire' if is_edit else 'Nouveau stagiaire'}")
+
     section_options = {"Aucune section": None} | {f"{s.code} - {s.nom}": s.id for s in sections}
     formation_options = {"Aucune formation": None} | {f"{f.code} - {f.nom}": f.id for f in formations}
-
     section_labels = list(section_options.keys())
     formation_labels = list(formation_options.keys())
+
     current_section = trainee.section_id if trainee else None
     current_formation = trainee.formation_souhaitee_id if trainee else None
     default_section = next((label for label, sid in section_options.items() if sid == current_section), "Aucune section")
@@ -147,15 +151,37 @@ def page_stagiaires() -> None:
         trainees = load_trainees(db, q)
         sections = load_sections(db)
         formations = load_formations(db, active_only=True)
+
         if st.button("+ Nouveau stagiaire"):
             st.session_state.trainee_screen = "create"
+            st.rerun()
+
         if st.session_state.trainee_screen == "create":
             render_trainee_form(db=db, mode="create", sections=sections, formations=formations)
+
         st.dataframe(
-            [{"Nom": t.nom, "Prénom": t.prenom, "Email": t.email or "-", "Formation": t.formation_souhaitee.code if t.formation_souhaitee else "Aucune"} for t in trainees],
+            [
+                {
+                    "ID": t.id,
+                    "Nom": t.nom,
+                    "Prénom": t.prenom,
+                    "Email": t.email or "-",
+                    "Formation": t.formation_souhaitee.code if t.formation_souhaitee else "Aucune",
+                }
+                for t in trainees
+            ],
             use_container_width=True,
             hide_index=True,
         )
+
+        st.markdown("#### Actions rapides")
+        for trainee in trainees:
+            cols = st.columns([3, 1])
+            cols[0].write(f"{trainee.nom} {trainee.prenom}")
+            if cols[1].button("Voir synthèse QCM", key=f"summary_btn_{trainee.id}"):
+                st.query_params.update({"summary_trainee": str(trainee.id)})
+                st.switch_page if False else None
+                st.info("Allez dans Synthèse > 📊 Synthèse stagiaire (stagiaire présélectionné).")
 
 
 def page_sections() -> None:
@@ -176,6 +202,7 @@ def page_import_csv() -> None:
     has_header = st.checkbox("Le fichier a une ligne d'en-tête", value=True)
     if not upload:
         return
+
     df = parse_csv(upload.getvalue(), sep=sep_choice, encoding=encoding_choice, has_header=has_header)
     st.dataframe(df.head(20), use_container_width=True)
     cols = ["-- Ignorer --"] + list(df.columns)
@@ -191,6 +218,7 @@ def page_import_csv() -> None:
     strategy = st.selectbox("Stratégie doublons", ["skip", "update", "strict"], help=HELP_TEXTS["import_strategy"])
     create_sections = st.checkbox("Créer sections manquantes")
     create_formations = st.checkbox("Créer formations manquantes")
+
     with SessionLocal() as db:
         options = ImportOptions(create_sections, create_formations, strategy)
         valid_rows, errors, duplicates = validate_rows(df, mapping, db, options)
@@ -208,6 +236,7 @@ def page_qcm_questionnaires() -> None:
     with SessionLocal() as db:
         q = st.text_input("Recherche titre", key="q_qcm")
         questionnaires = list_questionnaires(db, q)
+
         with st.form("new_qcm"):
             titre = st.text_input("Titre questionnaire *")
             description = st.text_area("Description")
@@ -222,7 +251,6 @@ def page_qcm_questionnaires() -> None:
         if questionnaires:
             selected_id = st.selectbox("Questionnaire", [q.id for q in questionnaires], format_func=lambda x: next(q.titre for q in questionnaires if q.id == x))
             selected = next(q for q in questionnaires if q.id == selected_id)
-            st.session_state.qcm_questionnaire_id = selected_id
 
             with st.form("edit_qcm"):
                 etitre = st.text_input("Titre", value=selected.titre)
@@ -238,9 +266,9 @@ def page_qcm_questionnaires() -> None:
                 toast("success", "Questionnaire supprimé")
                 st.rerun()
 
-            st.markdown("#### Questions")
             questions = list_questions(db, selected_id)
             st.dataframe([{"ID": q.id, "N°": q.numero, "Attendu": q.resultat_attendu, "Points": q.points, "Énoncé": q.enonce or "-"} for q in questions], use_container_width=True, hide_index=True)
+
             with st.form("add_question"):
                 numero = st.number_input("Numéro", min_value=1, step=1, value=1)
                 attendu = st.text_input("Résultat attendu *", placeholder="A ou A,C")
@@ -251,25 +279,6 @@ def page_qcm_questionnaires() -> None:
                 add_question(db, selected_id, int(numero), attendu, enonce, int(points))
                 toast("success", "Question ajoutée")
                 st.rerun()
-
-            if questions:
-                qid = st.selectbox("Question à modifier/supprimer", [q.id for q in questions], format_func=lambda x: f"Q{next(q.numero for q in questions if q.id==x)}")
-                qobj = next(q for q in questions if q.id == qid)
-                with st.form("edit_question"):
-                    enumero = st.number_input("Numéro", min_value=1, value=qobj.numero)
-                    eattendu = st.text_input("Résultat attendu", value=qobj.resultat_attendu)
-                    eenonce = st.text_area("Énoncé", value=qobj.enonce or "")
-                    epoints = st.number_input("Points", min_value=1, value=qobj.points)
-                    saveq = st.form_submit_button("Modifier question")
-                    delq = st.form_submit_button("Supprimer question", help=HELP_TEXTS["delete"])
-                if saveq:
-                    update_question(db, qid, int(enumero), eattendu, eenonce, int(epoints))
-                    toast("success", "Question modifiée")
-                    st.rerun()
-                if delq:
-                    delete_question(db, qid)
-                    toast("success", "Question supprimée")
-                    st.rerun()
 
             st.markdown("#### Import rapide des questions")
             bulk = st.text_area("Format: numero;resultat_attendu;enonce")
@@ -326,23 +335,6 @@ def page_qcm_passages() -> None:
                     toast("success", f"Corrigé: score {result.score_brut}/{result.total_questions}, note {result.note_sur_20}/20")
                     st.rerun()
 
-                refreshed = get_attempt_detail(db, attempt_id)
-                if refreshed and refreshed.answers:
-                    st.markdown("#### Récapitulatif")
-                    rows = []
-                    for ans in refreshed.answers:
-                        rows.append(
-                            {
-                                "Question": ans.question.numero,
-                                "Attendu": ans.question.resultat_attendu,
-                                "Réponse": ans.reponse_stagiaire or "",
-                                "Correct": "✅" if ans.est_correct else "❌",
-                                "Point": ans.point_obtenu,
-                            }
-                        )
-                    st.dataframe(rows, use_container_width=True, hide_index=True)
-                    st.info(f"Score brut: {refreshed.score_brut} / {refreshed.total_questions} | Note: {refreshed.note_sur_20}/20")
-
         st.markdown("#### Historique des passages")
         f1, f2, f3 = st.columns(3)
         f_stagiaire = f1.selectbox("Filtre stagiaire", [0] + [t.id for t in trainees], format_func=lambda i: "Tous" if i == 0 else next(f"{t.nom} {t.prenom}" for t in trainees if t.id == i))
@@ -366,9 +358,119 @@ def page_qcm_passages() -> None:
         )
 
 
+def page_synthese_stagiaire() -> None:
+    render_header("📊 Synthèse stagiaire", "Synthèse / Stagiaire")
+    with SessionLocal() as db:
+        trainees = load_trainees(db, "")
+        if not trainees:
+            st.warning("Aucun stagiaire disponible.")
+            return
+
+        default_id = None
+        qp = st.query_params.get("summary_trainee")
+        if qp and str(qp).isdigit():
+            default_id = int(qp)
+        trainee_ids = [t.id for t in trainees]
+        index = trainee_ids.index(default_id) if default_id in trainee_ids else 0
+
+        trainee_id = st.selectbox("Choisir un stagiaire", trainee_ids, index=index, format_func=lambda i: next(f"{t.nom} {t.prenom}" for t in trainees if t.id == i))
+        trainee = next(t for t in trainees if t.id == trainee_id)
+
+        summary = get_trainee_qcm_summary(db, trainee_id)
+        stats = summary["stats"]
+
+        if stats["total_attempts"] == 0:
+            st.info("Ce stagiaire n'a encore passé aucun QCM.")
+            st.markdown("➡️ **Action recommandée :** aller dans **QCM - Passages** puis cliquer sur *Démarrer une tentative*.")
+            return
+
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Tentatives", stats["total_attempts"])
+        c2.metric("Questionnaires distincts", stats["distinct_questionnaires"])
+        c3.metric("Moyenne /20", stats["average_note"])
+        c4.metric("Taux bonnes réponses", f"{stats['global_correct_rate']}%")
+
+        c5, c6, c7 = st.columns(3)
+        c5.metric("Meilleure note", stats["best_note"])
+        c6.metric("Pire note", stats["worst_note"])
+        c7.metric("Dernière tentative", str(stats["last_attempt_date"]).split(".")[0] if stats["last_attempt_date"] else "-")
+
+        # Charts
+        chart_left, chart_right = st.columns(2)
+        with chart_left:
+            ci = summary["correct_incorrect"]
+            fig1, ax1 = plt.subplots()
+            ax1.pie([ci["correct"], ci["incorrect"]], labels=["Correctes", "Incorrectes"], autopct="%1.1f%%", startangle=90)
+            ax1.set_title("Réponses correctes vs incorrectes")
+            st.pyplot(fig1)
+
+        with chart_right:
+            attempts_chrono = list(reversed(summary["attempts"]))
+            labels = [a.date_passage.strftime("%d/%m") for a in attempts_chrono]
+            notes = [a.note_sur_20 for a in attempts_chrono]
+            fig2, ax2 = plt.subplots()
+            ax2.bar(labels, notes, color="#3b82f6")
+            ax2.set_ylim(0, 20)
+            ax2.set_title("Note /20 par tentative")
+            ax2.set_xlabel("Date")
+            ax2.set_ylabel("Note")
+            st.pyplot(fig2)
+
+        st.markdown("#### Top 3 / Bottom 3 questionnaires")
+        tcol, bcol = st.columns(2)
+        tcol.dataframe(summary["top3"], use_container_width=True, hide_index=True)
+        bcol.dataframe(summary["bottom3"], use_container_width=True, hide_index=True)
+
+        st.markdown("#### Historique des tentatives")
+        recap_rows = []
+        for a in summary["attempts"]:
+            recap_rows.append(
+                {
+                    "Date passage": a.date_passage,
+                    "Questionnaire": a.questionnaire.titre,
+                    "Score brut": f"{a.score_brut}/{a.total_questions}",
+                    "Note /20": a.note_sur_20,
+                    "Détail": f"attempt_id={a.id}",
+                }
+            )
+        st.dataframe(recap_rows, use_container_width=True, hide_index=True)
+
+        # ChatGPT block
+        payload = {
+            "stagiaire": {"id": trainee.id, "nom": trainee.nom, "prenom": trainee.prenom},
+            "statistiques_globales": stats,
+            "tentatives": [
+                {
+                    "date": a.date_passage.isoformat(),
+                    "questionnaire": a.questionnaire.titre,
+                    "score": {"brut": a.score_brut, "total": a.total_questions},
+                    "note_sur_20": a.note_sur_20,
+                }
+                for a in summary["attempts"]
+            ],
+            "top3_questionnaires": summary["top3"],
+            "bottom3_questionnaires": summary["bottom3"],
+        }
+
+        prompt = (
+            "Tu es un formateur expert. À partir des données ci-dessous, rédige :\n"
+            "1) une synthèse courte (5-8 lignes),\n"
+            "2) une synthèse détaillée,\n"
+            "3) points forts / points à améliorer,\n"
+            "4) 2 à 5 recommandations d'entraînement concrètes,\n"
+            "5) un plan d'accompagnement.\n"
+            "Contraintes: ton professionnel, adapté à un adulte en formation, factuel, sans jugement.\n\n"
+            f"DONNÉES:\n{json.dumps(payload, ensure_ascii=False, indent=2)}"
+        )
+
+        st.markdown("#### Bloc ChatGPT (copier-coller)")
+        st.text_area("Prompt prêt à l'emploi", value=prompt, height=360)
+        st.caption("Copiez ce bloc dans ChatGPT pour générer automatiquement la synthèse.")
+
+
 def page_help() -> None:
     render_header("📘 Aide", "Aide / Guide utilisateur")
-    st.markdown("### Sommaire\n- Vue d'ensemble\n- Stagiaires\n- Sections\n- Formations\n- QCM\n- Import CSV\n- Sauvegarde / BDD")
+    st.markdown("### Sommaire\n- Vue d'ensemble\n- Stagiaires\n- Sections\n- Formations\n- QCM\n- Synthèse\n- Import CSV\n- Sauvegarde / BDD")
     for k, title in [
         ("overview", "Vue d'ensemble"),
         ("stagiaires", "Stagiaires"),
@@ -381,6 +483,8 @@ def page_help() -> None:
             st.write(AIDE_SECTIONS[k])
             if k == "import_csv":
                 st.code(CSV_EXAMPLE, language="csv")
+    with st.expander("Synthèse stagiaire"):
+        st.write("Affiche indicateurs QCM, graphiques, historique et bloc ChatGPT prêt à copier-coller.")
 
 
 def page_tools() -> None:
@@ -415,6 +519,9 @@ if hasattr(st, "navigation") and hasattr(st, "Page"):
                 st.Page(page_qcm_questionnaires, title="QCM - Questionnaires", icon="📝"),
                 st.Page(page_qcm_passages, title="QCM - Passages", icon="✅"),
             ],
+            "Synthèse": [
+                st.Page(page_synthese_stagiaire, title="📊 Synthèse stagiaire", icon="📊"),
+            ],
             "Outils": [
                 st.Page(page_import_csv, title="Import CSV", icon="📥"),
                 st.Page(page_tools, title="Init DB", icon="🛠️"),
@@ -432,7 +539,19 @@ else:
     st.sidebar.image(str(logo_path))
     choice = st.sidebar.selectbox(
         "Navigation",
-        ["Stagiaires", "Sections", "Formations", "QCM - Questionnaires", "QCM - Passages", "Import CSV", "📘 Aide", "Init DB", "À propos", "Préférences"],
+        [
+            "Stagiaires",
+            "Sections",
+            "Formations",
+            "QCM - Questionnaires",
+            "QCM - Passages",
+            "📊 Synthèse stagiaire",
+            "Import CSV",
+            "📘 Aide",
+            "Init DB",
+            "À propos",
+            "Préférences",
+        ],
     )
     {
         "Stagiaires": page_stagiaires,
@@ -440,6 +559,7 @@ else:
         "Formations": page_formations,
         "QCM - Questionnaires": page_qcm_questionnaires,
         "QCM - Passages": page_qcm_passages,
+        "📊 Synthèse stagiaire": page_synthese_stagiaire,
         "Import CSV": page_import_csv,
         "📘 Aide": page_help,
         "Init DB": page_tools,

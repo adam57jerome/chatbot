@@ -203,3 +203,20 @@ Le module QCM ajoute :
 alembic upgrade head
 streamlit run streamlit_app.py --server.port 8501
 ```
+
+## Synthèse stagiaire QCM
+
+Nouvelle page Streamlit: **Synthèse > 📊 Synthèse stagiaire**.
+
+Contenu affiché pour un stagiaire:
+- indicateurs globaux (tentatives, moyenne, meilleure/pire note, taux de bonnes réponses)
+- camembert correct/incorrect
+- bar chart des notes par tentative
+- historique détaillé des tentatives
+- bloc ChatGPT prêt à copier-coller (prompt + données JSON)
+
+Utilisation:
+1. Ouvrir Streamlit.
+2. Aller dans **Synthèse > 📊 Synthèse stagiaire**.
+3. Choisir un stagiaire.
+4. Copier le bloc “Prompt prêt à l'emploi” dans ChatGPT.
