@@ -5,6 +5,8 @@ from app.models import Stagiaire
 from app.qcm_service import (
     add_question,
     create_questionnaire,
+    delete_attempt,
+    get_attempt_answers_map,
     get_trainee_qcm_summary,
     start_attempt,
     submit_attempt,
@@ -78,3 +80,22 @@ def test_summary_groups_empty_subchapter_under_default_label():
         summary = get_trainee_qcm_summary(db, trainee.id)
         rows = [r for r in summary["by_subchapter"] if r["chapitre"] == "Mathématiques"]
         assert rows[0]["sous_chapitre"] == "Sans sous-chapitre"
+
+
+def test_delete_attempt_and_retrieve_answers_map():
+    with SessionLocal() as db:
+        trainee = Stagiaire(nom="Edit", prenom="Attempt", email="edit.attempt@example.com")
+        db.add(trainee)
+        db.commit()
+        db.refresh(trainee)
+
+        q = create_questionnaire(db, "QCM Delete", "desc")
+        q1 = add_question(db, q.id, 1, "A", chapitre="Français")
+        a1 = start_attempt(db, trainee.id, q.id)
+        submit_attempt(db, a1.id, {q1.id: "A"})
+
+        answers = get_attempt_answers_map(db, a1.id)
+        assert answers[q1.id] == "A"
+
+        assert delete_attempt(db, a1.id) is True
+        assert delete_attempt(db, a1.id) is False

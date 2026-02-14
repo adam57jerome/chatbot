@@ -204,6 +204,22 @@ def get_attempt_detail(db: Session, attempt_id: int) -> QCMAttempt | None:
     return db.get(QCMAttempt, attempt_id)
 
 
+def delete_attempt(db: Session, attempt_id: int) -> bool:
+    attempt = db.get(QCMAttempt, attempt_id)
+    if not attempt:
+        return False
+    db.delete(attempt)
+    db.commit()
+    return True
+
+
+def get_attempt_answers_map(db: Session, attempt_id: int) -> dict[int, str | None]:
+    rows = db.execute(
+        select(QCMAnswer.question_id, QCMAnswer.reponse_stagiaire).where(QCMAnswer.attempt_id == attempt_id)
+    ).all()
+    return {int(qid): ans for qid, ans in rows}
+
+
 # Synthesis aggregates
 
 def list_attempts_by_trainee(db: Session, trainee_id: int):

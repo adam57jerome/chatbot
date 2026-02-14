@@ -29,6 +29,8 @@ from app.qcm_service import (
     create_questionnaire,
     delete_question,
     delete_questionnaire,
+    delete_attempt,
+    get_attempt_answers_map,
     get_attempt_detail,
     aggregate_scores_by_subchapter,
     get_trainee_qcm_summary,
@@ -66,6 +68,7 @@ for key, value in {
     "edit_formation_id": None,
     "qcm_questionnaire_id": None,
     "qcm_attempt_id": None,
+    "qcm_edit_attempt_id": None,
 }.items():
     st.session_state.setdefault(key, value)
 
@@ -619,6 +622,43 @@ def page_qcm_passages() -> None:
             st.session_state.qcm_attempt_id = attempt.id
             st.rerun()
 
+        edit_attempt_id = st.session_state.qcm_edit_attempt_id
+        if edit_attempt_id:
+            edit_attempt = get_attempt_detail(db, edit_attempt_id)
+            if not edit_attempt:
+                st.session_state.qcm_edit_attempt_id = None
+                st.warning("Tentative introuvable.")
+                st.rerun()
+
+            st.markdown(f"#### Modifier tentative #{edit_attempt.id}")
+            questions_edit = list_questions(db, edit_attempt.questionnaire_id)
+            existing_answers = get_attempt_answers_map(db, edit_attempt.id)
+            edited_answers: dict[int, str | None] = {}
+            with st.form(f"edit_attempt_form_{edit_attempt.id}"):
+                current_chapter = None
+                for q in questions_edit:
+                    chapter_label = q.chapitre or "Général"
+                    if chapter_label != current_chapter:
+                        st.markdown(f"**Chapitre : {chapter_label}**")
+                        current_chapter = chapter_label
+                    edited_answers[q.id] = st.text_input(
+                        f"Q{q.numero} - {q.enonce or 'Sans énoncé'}",
+                        value=existing_answers.get(q.id) or "",
+                        key=f"edit_ans_{edit_attempt.id}_{q.id}",
+                        help=f"Attendu normalisé: {normalize_answer(q.resultat_attendu)}",
+                    )
+                save_edit = st.form_submit_button("Enregistrer modifications", type="primary")
+                cancel_edit = st.form_submit_button("Annuler")
+
+            if cancel_edit:
+                st.session_state.qcm_edit_attempt_id = None
+                st.rerun()
+            if save_edit:
+                result = submit_attempt(db, edit_attempt.id, edited_answers)
+                st.session_state.qcm_edit_attempt_id = None
+                toast("success", f"Tentative mise à jour: {result.score_brut}/{result.total_questions}, note {result.note_sur_20}/20")
+                st.rerun()
+
         attempt_id = st.session_state.qcm_attempt_id
         if attempt_id:
             attempt = get_attempt_detail(db, attempt_id)
@@ -669,6 +709,23 @@ def page_qcm_passages() -> None:
             use_container_width=True,
             hide_index=True,
         )
+
+        st.markdown("#### Modifier / Supprimer un passage")
+        for a in attempts:
+            c1, c2, c3 = st.columns([5, 1, 1])
+            c1.write(f"#{a.id} — {a.stagiaire.nom} {a.stagiaire.prenom} — {a.questionnaire.titre} — {a.note_sur_20}/20")
+            if c2.button("✏️", key=f"edit_attempt_{a.id}", help="Modifier cette tentative"):
+                st.session_state.qcm_edit_attempt_id = a.id
+                st.session_state.qcm_attempt_id = None
+                st.rerun()
+            if c3.button("🗑️", key=f"delete_attempt_{a.id}", help="Supprimer cette tentative"):
+                delete_attempt(db, a.id)
+                if st.session_state.qcm_edit_attempt_id == a.id:
+                    st.session_state.qcm_edit_attempt_id = None
+                if st.session_state.qcm_attempt_id == a.id:
+                    st.session_state.qcm_attempt_id = None
+                toast("success", "Passage supprimé")
+                st.rerun()
 
 
 def page_synthese_stagiaire() -> None:
