@@ -310,7 +310,98 @@ def page_sections() -> None:
 
 def page_formations() -> None:
     render_header("Gestion des formations", "Gestion / Formations")
-    st.info("Fonctionnalité formations inchangée.")
+    with SessionLocal() as db:
+        query = st.text_input("Recherche formation", key="q_formations")
+        active_filter = st.selectbox(
+            "Statut",
+            ["Toutes", "Actives", "Inactives"],
+            key="formation_status_filter",
+        )
+        actif_filter = {"Toutes": None, "Actives": "active", "Inactives": "inactive"}[active_filter]
+        formations, _total = crud.list_formations(db, q=query, actif_filter=actif_filter, page=1, per_page=500)
+
+        if st.button("+ Nouvelle formation", key="new_formation_btn"):
+            st.session_state.formation_screen = "create"
+            st.session_state.edit_formation_id = None
+            st.rerun()
+
+        if st.session_state.formation_screen in {"create", "edit"}:
+            is_edit = st.session_state.formation_screen == "edit"
+            formation = crud.get_formation_by_id(db, st.session_state.edit_formation_id) if is_edit else None
+            if is_edit and not formation:
+                toast("warning", "Formation introuvable")
+                st.session_state.formation_screen = "list"
+                st.session_state.edit_formation_id = None
+                st.rerun()
+
+            st.markdown("<div class='app-card'>", unsafe_allow_html=True)
+            st.markdown(f"#### {'Modifier formation' if is_edit else 'Nouvelle formation'}")
+            with st.form(f"formation_form_{'edit' if is_edit else 'create'}"):
+                c1, c2 = st.columns(2)
+                code = c1.text_input("Code *", value=formation.code if formation else "")
+                nom = c2.text_input("Nom *", value=formation.nom if formation else "")
+                description = st.text_area("Description", value=formation.description or "" if formation else "")
+                actif = st.checkbox("Formation active", value=formation.actif if formation else True)
+                save = st.form_submit_button("💾 Enregistrer", type="primary")
+                cancel = st.form_submit_button("Annuler")
+
+            if cancel:
+                st.session_state.formation_screen = "list"
+                st.session_state.edit_formation_id = None
+                st.rerun()
+
+            if save:
+                try:
+                    payload = FormationUpdate(
+                        code=code,
+                        nom=nom,
+                        description=description or None,
+                        actif=actif,
+                    )
+                    if is_edit and formation:
+                        crud.update_formation(db, formation.id, payload)
+                        toast("success", "Formation mise à jour")
+                    else:
+                        crud.create_formation(db, FormationCreate(**payload.model_dump()))
+                        toast("success", "Formation créée")
+                    st.session_state.formation_screen = "list"
+                    st.session_state.edit_formation_id = None
+                    st.rerun()
+                except ValidationError as exc:
+                    st.error("Validation: " + ", ".join(err["msg"] for err in exc.errors()))
+                except IntegrityError:
+                    db.rollback()
+                    st.error("Erreur: code formation déjà utilisé")
+
+            st.markdown("</div>", unsafe_allow_html=True)
+
+        st.dataframe(
+            [
+                {
+                    "ID": f.id,
+                    "Code": f.code,
+                    "Nom": f.nom,
+                    "Active": "Oui" if f.actif else "Non",
+                    "Souhaits": len(f.stagiaires_souhaits),
+                }
+                for f in formations
+            ],
+            use_container_width=True,
+            hide_index=True,
+        )
+
+        st.markdown("#### Actions")
+        for formation in formations:
+            c1, c2, c3 = st.columns([5, 1, 1])
+            c1.write(f"{formation.code} — {formation.nom}")
+            if c2.button("✏️", key=f"formation_edit_{formation.id}"):
+                st.session_state.formation_screen = "edit"
+                st.session_state.edit_formation_id = formation.id
+                st.rerun()
+            if c3.button("🗑️", key=f"formation_delete_{formation.id}"):
+                crud.delete_formation_safely(db, formation.id)
+                toast("success", "Formation supprimée")
+                st.rerun()
 
 
 def page_import_csv() -> None:
