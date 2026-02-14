@@ -51,6 +51,7 @@ Application locale (Streamlit + FastAPI + SQLAlchemy + SQLite) pour gérer des s
   - Réussite par chapitre
   - Drill-down réussite par sous-chapitre
 - Tableau récapitulatif chapitre/sous-chapitre.
+- Radar / toile d’araignée des compétences par chapitre (échelle /20) avec export PNG/HTML.
 
 ### Import CSV
 - Mapping colonnes, validation, stratégies doublons.

@@ -16,6 +16,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError, OperationalError
 
 from app import crud
+from charts.radar import build_radar_figure
 from app.db import (
     SessionLocal,
     create_sqlite_backup,
@@ -894,6 +895,40 @@ def page_synthese_stagiaire() -> None:
 
             st.markdown("#### Tableau récapitulatif chapitre / sous-chapitre")
             st.dataframe(summary.get("by_subchapter", []), use_container_width=True, hide_index=True)
+
+        st.markdown("#### Radar compétences (/20)")
+        chapter_scores = {
+            row["chapitre"]: round((row["taux"] / 100) * 20, 1)
+            for row in summary.get("by_chapter", [])
+        }
+        if not chapter_scores:
+            st.info("Aucune donnée de chapitre disponible pour le radar.")
+        else:
+            radar = build_radar_figure(chapter_scores, f"Profil compétences - {trainee.nom} {trainee.prenom}", max_score=20, tick_step=2)
+            st.plotly_chart(radar, use_container_width=True)
+
+            col_png, col_html = st.columns(2)
+            if col_png.button("Télécharger radar.png", key=f"radar_png_{trainee_id}"):
+                try:
+                    png_bytes = radar.to_image(format="png", width=1000, height=700, scale=2)
+                    st.download_button(
+                        "Confirmer téléchargement PNG",
+                        data=png_bytes,
+                        file_name=f"radar_{trainee_id}.png",
+                        mime="image/png",
+                        key=f"dl_radar_png_{trainee_id}",
+                    )
+                except Exception:
+                    st.warning("Export PNG indisponible (installer kaleido). Utilisez l'export HTML.")
+
+            html_content = radar.to_html(full_html=True, include_plotlyjs="cdn")
+            col_html.download_button(
+                "Télécharger radar.html",
+                data=html_content,
+                file_name=f"radar_{trainee_id}.html",
+                mime="text/html",
+                key=f"dl_radar_html_{trainee_id}",
+            )
 
         st.markdown("#### Historique des tentatives")
         recap_rows = []
