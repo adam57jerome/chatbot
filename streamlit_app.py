@@ -498,27 +498,38 @@ def page_qcm_questionnaires() -> None:
                 st.rerun()
 
             questions = list_questions(db, selected_id)
-            st.dataframe([{"ID": q.id, "N°": q.numero, "Attendu": q.resultat_attendu, "Points": q.points, "Énoncé": q.enonce or "-"} for q in questions], use_container_width=True, hide_index=True)
+            st.dataframe([{"ID": q.id, "Chapitre": q.chapitre or "Général", "N°": q.numero, "Attendu": q.resultat_attendu, "Points": q.points, "Énoncé": q.enonce or "-"} for q in questions], use_container_width=True, hide_index=True)
 
             with st.form("add_question"):
+                chapitre = st.text_input("Chapitre", placeholder="Français, Mathématiques, ...")
                 numero = st.number_input("Numéro", min_value=1, step=1, value=1)
                 attendu = st.text_input("Résultat attendu *", placeholder="A ou A,C")
                 enonce = st.text_area("Énoncé")
                 points = st.number_input("Points", min_value=1, value=1)
                 add_btn = st.form_submit_button("Ajouter question", type="primary")
             if add_btn and attendu.strip():
-                add_question(db, selected_id, int(numero), attendu, enonce, int(points))
+                add_question(db, selected_id, int(numero), attendu, enonce, int(points), chapitre)
                 toast("success", "Question ajoutée")
                 st.rerun()
 
             st.markdown("#### Import rapide des questions")
-            bulk = st.text_area("Format: numero;resultat_attendu;enonce")
+            bulk = st.text_area("Format: chapitre;numero;resultat_attendu;enonce (chapitre optionnel)")
             if st.button("Importer lignes questions"):
                 added = 0
                 for line in bulk.splitlines():
                     parts = [p.strip() for p in line.split(";")]
-                    if len(parts) >= 2 and parts[0].isdigit():
-                        add_question(db, selected_id, int(parts[0]), parts[1], parts[2] if len(parts) > 2 else None, 1)
+                    if not parts:
+                        continue
+                    chapitre_line = None
+                    numero_idx = 0
+                    if len(parts) >= 3 and not parts[0].isdigit():
+                        chapitre_line = parts[0]
+                        numero_idx = 1
+                    if len(parts) > numero_idx + 1 and parts[numero_idx].isdigit():
+                        numero = int(parts[numero_idx])
+                        attendu_line = parts[numero_idx + 1]
+                        enonce_line = parts[numero_idx + 2] if len(parts) > numero_idx + 2 else None
+                        add_question(db, selected_id, numero, attendu_line, enonce_line, 1, chapitre_line)
                         added += 1
                 toast("success", f"{added} question(s) importée(s)")
                 st.rerun()
@@ -550,7 +561,12 @@ def page_qcm_passages() -> None:
                 st.markdown("#### Feuille de saisie")
                 answers: dict[int, str | None] = {}
                 with st.form("submit_attempt"):
+                    current_chapter = None
                     for q in questions:
+                        chapter_label = q.chapitre or "Général"
+                        if chapter_label != current_chapter:
+                            st.markdown(f"**Chapitre : {chapter_label}**")
+                            current_chapter = chapter_label
                         answers[q.id] = st.text_input(
                             f"Q{q.numero} - {q.enonce or 'Sans énoncé'}",
                             key=f"ans_{attempt_id}_{q.id}",

@@ -69,6 +69,21 @@ def init_db() -> None:
     from app import models  # noqa: F401
 
     Base.metadata.create_all(bind=engine)
+    _ensure_qcm_questions_chapitre_column()
+
+
+def _ensure_qcm_questions_chapitre_column() -> None:
+    if not DATABASE_URL.startswith("sqlite"):
+        return
+
+    with engine.begin() as conn:
+        rows = conn.exec_driver_sql("PRAGMA table_info('qcm_questions')").fetchall()
+        if not rows:
+            return
+        cols = {r[1] for r in rows}
+        if "chapitre" in cols:
+            return
+        conn.exec_driver_sql("ALTER TABLE qcm_questions ADD COLUMN chapitre VARCHAR(120)")
 
 
 def get_db() -> Generator[Session, None, None]:

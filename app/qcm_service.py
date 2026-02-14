@@ -76,11 +76,13 @@ def add_question(
     resultat_attendu: str,
     enonce: str | None = None,
     points: int = 1,
+    chapitre: str | None = None,
 ) -> QCMQuestion:
     question = QCMQuestion(
         questionnaire_id=questionnaire_id,
         numero=numero,
         enonce=enonce or None,
+        chapitre=chapitre.strip() if chapitre else None,
         resultat_attendu=resultat_attendu.strip(),
         points=points,
     )
@@ -97,6 +99,7 @@ def update_question(
     resultat_attendu: str,
     enonce: str | None = None,
     points: int = 1,
+    chapitre: str | None = None,
 ) -> QCMQuestion | None:
     question = db.get(QCMQuestion, question_id)
     if not question:
@@ -104,6 +107,7 @@ def update_question(
     question.numero = numero
     question.resultat_attendu = resultat_attendu.strip()
     question.enonce = enonce or None
+    question.chapitre = chapitre.strip() if chapitre else None
     question.points = points
     db.commit()
     db.refresh(question)
@@ -121,7 +125,7 @@ def delete_question(db: Session, question_id: int) -> bool:
 
 def list_questions(db: Session, questionnaire_id: int):
     return db.scalars(
-        select(QCMQuestion).where(QCMQuestion.questionnaire_id == questionnaire_id).order_by(QCMQuestion.numero)
+        select(QCMQuestion).where(QCMQuestion.questionnaire_id == questionnaire_id).order_by(QCMQuestion.chapitre, QCMQuestion.numero)
     ).all()
 
 
