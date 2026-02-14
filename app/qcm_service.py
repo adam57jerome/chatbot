@@ -66,7 +66,7 @@ def list_questionnaires(db: Session, q: str | None = None):
     query = select(Questionnaire)
     if q:
         query = query.where(func.lower(Questionnaire.titre).contains(q.strip().lower()))
-    return db.scalars(query.order_by(Questionnaire.created_at.desc())).all()
+    return db.scalars(query.order_by(Questionnaire.id)).all()
 
 
 def add_question(
@@ -137,7 +137,7 @@ def delete_question(db: Session, question_id: int) -> bool:
 
 def list_questions(db: Session, questionnaire_id: int):
     return db.scalars(
-        select(QCMQuestion).where(QCMQuestion.questionnaire_id == questionnaire_id).order_by(QCMQuestion.chapitre, QCMQuestion.sous_chapitre, QCMQuestion.numero)
+        select(QCMQuestion).where(QCMQuestion.questionnaire_id == questionnaire_id).order_by(QCMQuestion.id)
     ).all()
 
 

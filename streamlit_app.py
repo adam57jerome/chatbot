@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import csv
 import json
 from datetime import date
+from io import StringIO
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import Callable, TypeVar
@@ -502,13 +504,14 @@ def page_qcm_questionnaires() -> None:
                 st.rerun()
 
             questions = list_questions(db, selected_id)
-            chapter_options = ["Tous"] + sorted({q.chapitre for q in questions if q.chapitre})
+            chapter_values = list(dict.fromkeys([q.chapitre for q in questions if q.chapitre]))
+            chapter_options = ["Tous"] + chapter_values
             selected_chapter_filter = st.selectbox("Filtre chapitre", chapter_options, key=f"q_filter_chapter_{selected_id}")
             filtered_questions = questions
             if selected_chapter_filter != "Tous":
                 filtered_questions = [q for q in filtered_questions if q.chapitre == selected_chapter_filter]
 
-            subchapter_values = sorted({(q.sous_chapitre or "Sans sous-chapitre") for q in filtered_questions})
+            subchapter_values = list(dict.fromkeys([(q.sous_chapitre or "Sans sous-chapitre") for q in filtered_questions]))
             subchapter_options = ["Tous"] + subchapter_values
             selected_subchapter_filter = st.selectbox("Filtre sous-chapitre", subchapter_options, key=f"q_filter_subchapter_{selected_id}")
             if selected_subchapter_filter != "Tous":
@@ -602,6 +605,56 @@ def page_qcm_questionnaires() -> None:
                     added += 1
                 toast("success", f"{added} question(s) importée(s), {rejected} rejetée(s)")
                 st.rerun()
+
+            st.markdown("#### Importer questionnaire(s) depuis CSV")
+            st.caption("Colonnes attendues: questionnaire;numero;resultat_attendu;chapitre;sous_chapitre;enonce;points (chapitre obligatoire, numero optionnel)")
+            csv_file = st.file_uploader("Fichier CSV questionnaires", type=["csv"], key="qcm_questionnaires_csv")
+            if st.button("Importer questionnaire(s) CSV", key="import_qcm_csv_btn"):
+                if not csv_file:
+                    st.warning("Veuillez sélectionner un fichier CSV.")
+                else:
+                    content = csv_file.getvalue().decode("utf-8", errors="ignore")
+                    reader = csv.DictReader(StringIO(content), delimiter=';')
+                    required = {"questionnaire", "resultat_attendu", "chapitre"}
+                    if not reader.fieldnames or not required.issubset(set(reader.fieldnames)):
+                        st.error("Colonnes minimales requises: questionnaire;resultat_attendu;chapitre")
+                    else:
+                        created_q = 0
+                        added_qs = 0
+                        rejected = 0
+                        qcache: dict[str, int] = {}
+                        auto_num: dict[str, int] = {}
+                        for row in reader:
+                            q_title = (row.get("questionnaire") or "").strip()
+                            attendu_line = (row.get("resultat_attendu") or "").strip()
+                            chapitre_line = (row.get("chapitre") or "").strip()
+                            sous_chapitre_line = (row.get("sous_chapitre") or "").strip() or None
+                            enonce_line = (row.get("enonce") or "").strip() or None
+                            points_raw = (row.get("points") or "1").strip()
+                            numero_raw = (row.get("numero") or "").strip()
+
+                            if not q_title or not attendu_line or not chapitre_line:
+                                rejected += 1
+                                continue
+
+                            if q_title not in qcache:
+                                qn = create_questionnaire(db, q_title)
+                                qcache[q_title] = qn.id
+                                auto_num[q_title] = 1
+                                created_q += 1
+
+                            if numero_raw.isdigit():
+                                numero = int(numero_raw)
+                            else:
+                                numero = auto_num[q_title]
+                                auto_num[q_title] += 1
+
+                            points = int(points_raw) if points_raw.isdigit() and int(points_raw) > 0 else 1
+                            add_question(db, qcache[q_title], numero, attendu_line, enonce_line, points, chapitre_line, sous_chapitre_line)
+                            added_qs += 1
+
+                        toast("success", f"{created_q} questionnaire(s) créé(s), {added_qs} question(s) importée(s), {rejected} ligne(s) rejetée(s)")
+                        st.rerun()
 
 
 def page_qcm_passages() -> None:

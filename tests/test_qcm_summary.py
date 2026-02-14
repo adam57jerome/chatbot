@@ -99,3 +99,16 @@ def test_delete_attempt_and_retrieve_answers_map():
 
         assert delete_attempt(db, a1.id) is True
         assert delete_attempt(db, a1.id) is False
+
+
+def test_list_questions_keeps_insert_order_not_alphabetical():
+    from app.qcm_service import list_questions
+
+    with SessionLocal() as db:
+        q = create_questionnaire(db, "QCM Ordre import", "desc")
+        q1 = add_question(db, q.id, 10, "A", chapitre="Zeta")
+        q2 = add_question(db, q.id, 1, "B", chapitre="Alpha")
+        q3 = add_question(db, q.id, 5, "C", chapitre="Beta")
+
+        questions = list_questions(db, q.id)
+        assert [q.id for q in questions] == [q1.id, q2.id, q3.id]
