@@ -168,6 +168,15 @@ def page_stagiaires() -> None:
         if st.session_state.trainee_screen == "create":
             render_trainee_form(db=db, mode="create", sections=sections, formations=formations)
 
+        if st.session_state.trainee_screen == "edit":
+            trainee = crud.get_trainee_by_id(db, st.session_state.edit_trainee_id)
+            if not trainee:
+                toast("warning", "Stagiaire introuvable")
+                st.session_state.trainee_screen = "list"
+                st.session_state.edit_trainee_id = None
+                st.rerun()
+            render_trainee_form(db=db, mode="edit", sections=sections, formations=formations, trainee=trainee)
+
         st.dataframe(
             [
                 {
@@ -185,9 +194,13 @@ def page_stagiaires() -> None:
 
         st.markdown("#### Actions rapides")
         for trainee in trainees:
-            cols = st.columns([3, 1])
+            cols = st.columns([3, 1, 1])
             cols[0].write(f"{trainee.nom} {trainee.prenom}")
-            if cols[1].button("Voir synthèse QCM", key=f"summary_btn_{trainee.id}"):
+            if cols[1].button("✏️ Modifier", key=f"edit_trainee_btn_{trainee.id}"):
+                st.session_state.trainee_screen = "edit"
+                st.session_state.edit_trainee_id = trainee.id
+                st.rerun()
+            if cols[2].button("Voir synthèse QCM", key=f"summary_btn_{trainee.id}"):
                 st.query_params.update({"summary_trainee": str(trainee.id)})
                 st.switch_page if False else None
                 st.info("Allez dans Synthèse > 📊 Synthèse stagiaire (stagiaire présélectionné).")
