@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from datetime import date
 from pathlib import Path
+from tempfile import NamedTemporaryFile
 from typing import Callable, TypeVar
 
 import matplotlib.pyplot as plt
@@ -12,7 +13,14 @@ from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError, OperationalError
 
 from app import crud
-from app.db import SessionLocal, get_sqlite_db_path, init_db
+from app.db import (
+    SessionLocal,
+    create_sqlite_backup,
+    get_sqlite_db_path,
+    init_db,
+    list_sqlite_backups,
+    restore_sqlite_backup,
+)
 from app.help_texts import AIDE_SECTIONS, CSV_EXAMPLE, HELP_TEXTS
 from app.importer import ImportOptions, apply_import, parse_csv, report_to_csv, validate_rows
 from app.models import Formation, Section, Stagiaire
@@ -728,9 +736,80 @@ def page_help() -> None:
 
 def page_tools() -> None:
     render_header("Outils", "Outils / Initialisation")
+
     if st.button("Initialiser la base", type="primary"):
         init_db()
         toast("success", "Base initialisée")
+
+    st.markdown("---")
+    st.markdown("### Sauvegarde / Restauration")
+
+    sqlite_path = get_sqlite_db_path()
+    if not sqlite_path:
+        st.warning("Sauvegarde/restauration indisponible: DATABASE_URL n'est pas une base SQLite locale.")
+        return
+
+    st.caption(f"Base active: {sqlite_path}")
+
+    c1, c2 = st.columns([1, 2])
+    if c1.button("Créer une sauvegarde", key="create_backup_btn"):
+        try:
+            backup_file = create_sqlite_backup()
+            toast("success", f"Sauvegarde créée: {backup_file.name}")
+            st.session_state["latest_backup_path"] = str(backup_file)
+            st.rerun()
+        except Exception as exc:  # noqa: BLE001
+            st.error(f"Erreur sauvegarde: {exc}")
+
+    latest_backup = st.session_state.get("latest_backup_path")
+    if latest_backup:
+        backup_path = Path(latest_backup)
+        if backup_path.exists():
+            c2.download_button(
+                "Télécharger la dernière sauvegarde",
+                data=backup_path.read_bytes(),
+                file_name=backup_path.name,
+                mime="application/octet-stream",
+                key="download_latest_backup",
+            )
+
+    backups = list_sqlite_backups()
+    if backups:
+        backup_map = {b.name: b for b in backups}
+        selected_name = st.selectbox("Sauvegardes disponibles", list(backup_map.keys()), key="backup_select")
+        confirm_restore = st.checkbox("Je confirme remplacer la base actuelle par cette sauvegarde", key="confirm_restore_file")
+        if st.button("Restaurer la sauvegarde sélectionnée", key="restore_selected_backup"):
+            if not confirm_restore:
+                st.warning("Veuillez confirmer la restauration.")
+            else:
+                try:
+                    restore_sqlite_backup(backup_map[selected_name])
+                    toast("success", f"Base restaurée depuis {selected_name}")
+                    st.rerun()
+                except Exception as exc:  # noqa: BLE001
+                    st.error(f"Erreur restauration: {exc}")
+
+    st.markdown("#### Restaurer depuis un fichier local")
+    uploaded_backup = st.file_uploader("Importer un fichier .db de sauvegarde", type=["db"], key="upload_backup_db")
+    confirm_upload_restore = st.checkbox("Je confirme remplacer la base actuelle avec ce fichier", key="confirm_restore_upload")
+    if st.button("Restaurer le fichier importé", key="restore_uploaded_backup"):
+        if not uploaded_backup:
+            st.warning("Aucun fichier sélectionné.")
+        elif not confirm_upload_restore:
+            st.warning("Veuillez confirmer la restauration.")
+        else:
+            with NamedTemporaryFile(delete=False, suffix=".db") as tmp:
+                tmp.write(uploaded_backup.getvalue())
+                tmp_path = Path(tmp.name)
+            try:
+                restore_sqlite_backup(tmp_path)
+                toast("success", "Base restaurée depuis le fichier importé")
+                st.rerun()
+            except Exception as exc:  # noqa: BLE001
+                st.error(f"Erreur restauration: {exc}")
+            finally:
+                if tmp_path.exists():
+                    tmp_path.unlink()
 
 
 def page_about() -> None:

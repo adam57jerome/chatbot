@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import os
+import shutil
 from collections.abc import Generator
+from datetime import datetime
 from pathlib import Path
 
 from sqlalchemy import create_engine, event
@@ -75,3 +77,55 @@ def get_db() -> Generator[Session, None, None]:
         yield db
     finally:
         db.close()
+
+
+def get_backups_dir() -> Path | None:
+    sqlite_path = get_sqlite_db_path()
+    if not sqlite_path:
+        return None
+    backup_dir = Path(sqlite_path).resolve().parent / "backups"
+    backup_dir.mkdir(parents=True, exist_ok=True)
+    return backup_dir
+
+
+def list_sqlite_backups() -> list[Path]:
+    backup_dir = get_backups_dir()
+    if not backup_dir:
+        return []
+    return sorted(backup_dir.glob("*.db"), reverse=True)
+
+
+def create_sqlite_backup() -> Path:
+    sqlite_path = get_sqlite_db_path()
+    if not sqlite_path:
+        raise RuntimeError("La sauvegarde automatique est disponible uniquement avec SQLite.")
+
+    db_file = Path(sqlite_path).resolve()
+    if not db_file.exists():
+        raise FileNotFoundError(f"Base introuvable: {db_file}")
+
+    backup_dir = get_backups_dir()
+    assert backup_dir is not None
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    backup_file = backup_dir / f"app_backup_{timestamp}.db"
+
+    engine.dispose()
+    shutil.copy2(db_file, backup_file)
+    return backup_file
+
+
+def restore_sqlite_backup(backup_path: str | Path) -> Path:
+    sqlite_path = get_sqlite_db_path()
+    if not sqlite_path:
+        raise RuntimeError("La restauration automatique est disponible uniquement avec SQLite.")
+
+    source = Path(backup_path).resolve()
+    if not source.exists():
+        raise FileNotFoundError(f"Sauvegarde introuvable: {source}")
+
+    destination = Path(sqlite_path).resolve()
+    destination.parent.mkdir(parents=True, exist_ok=True)
+
+    engine.dispose()
+    shutil.copy2(source, destination)
+    return destination
