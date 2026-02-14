@@ -187,7 +187,125 @@ def page_stagiaires() -> None:
 
 def page_sections() -> None:
     render_header("Gestion des sections", "Gestion / Sections")
-    st.info("Fonctionnalité sections inchangée.")
+    with SessionLocal() as db:
+        query = st.text_input("Recherche section", key="q_sections")
+        sections, _total = crud.list_sections(db, q=query, page=1, per_page=500)
+
+        if st.button("+ Nouvelle section", key="new_section_btn"):
+            st.session_state.section_screen = "create"
+            st.session_state.edit_section_id = None
+            st.rerun()
+
+        if st.session_state.section_screen in {"create", "edit"}:
+            is_edit = st.session_state.section_screen == "edit"
+            section = crud.get_section_by_id(db, st.session_state.edit_section_id) if is_edit else None
+            if is_edit and not section:
+                toast("warning", "Section introuvable")
+                st.session_state.section_screen = "list"
+                st.session_state.edit_section_id = None
+                st.rerun()
+
+            st.markdown("<div class='app-card'>", unsafe_allow_html=True)
+            st.markdown(f"#### {'Modifier section' if is_edit else 'Nouvelle section'}")
+            with st.form(f"section_form_{'edit' if is_edit else 'create'}"):
+                c1, c2 = st.columns(2)
+                code = c1.text_input("Code *", value=section.code if section else "")
+                nom = c2.text_input("Nom *", value=section.nom if section else "")
+                c3, c4 = st.columns(2)
+                date_debut = c3.date_input("Date début", value=section.date_debut if section and section.date_debut else None)
+                date_fin = c4.date_input("Date fin", value=section.date_fin if section and section.date_fin else None)
+                description = st.text_area("Description", value=section.description or "" if section else "")
+                save = st.form_submit_button("💾 Enregistrer", type="primary")
+                cancel = st.form_submit_button("Annuler")
+
+            if cancel:
+                st.session_state.section_screen = "list"
+                st.session_state.edit_section_id = None
+                st.rerun()
+
+            if save:
+                try:
+                    payload = SectionUpdate(
+                        code=code,
+                        nom=nom,
+                        date_debut=date_debut,
+                        date_fin=date_fin,
+                        description=description or None,
+                    )
+                    if is_edit and section:
+                        crud.update_section(db, section.id, payload)
+                        toast("success", "Section mise à jour")
+                    else:
+                        crud.create_section(db, SectionCreate(**payload.model_dump()))
+                        toast("success", "Section créée")
+                    st.session_state.section_screen = "list"
+                    st.session_state.edit_section_id = None
+                    st.rerun()
+                except ValidationError as exc:
+                    st.error("Validation: " + ", ".join(err["msg"] for err in exc.errors()))
+                except IntegrityError:
+                    db.rollback()
+                    st.error("Erreur: code section déjà utilisé")
+
+            st.markdown("</div>", unsafe_allow_html=True)
+
+        st.dataframe(
+            [
+                {
+                    "ID": s.id,
+                    "Code": s.code,
+                    "Nom": s.nom,
+                    "Date début": s.date_debut,
+                    "Date fin": s.date_fin,
+                    "Stagiaires": len(s.stagiaires),
+                }
+                for s in sections
+            ],
+            use_container_width=True,
+            hide_index=True,
+        )
+
+        st.markdown("#### Actions")
+        for section in sections:
+            c1, c2, c3, c4 = st.columns([4, 1, 1, 1])
+            c1.write(f"{section.code} — {section.nom}")
+            if c2.button("👥", key=f"section_assign_{section.id}", help="Assigner des stagiaires"):
+                st.session_state["selected_section_for_assign"] = section.id
+            if c3.button("✏️", key=f"section_edit_{section.id}"):
+                st.session_state.section_screen = "edit"
+                st.session_state.edit_section_id = section.id
+                st.rerun()
+            if c4.button("🗑️", key=f"section_delete_{section.id}"):
+                crud.delete_section_safely(db, section.id)
+                toast("success", "Section supprimée")
+                st.rerun()
+
+        selected_section_id = st.session_state.get("selected_section_for_assign")
+        if selected_section_id:
+            section = crud.get_section_by_id(db, selected_section_id)
+            if section:
+                st.markdown("---")
+                st.markdown(f"#### Affectations — {section.code} / {section.nom}")
+                assigned = crud.list_trainees_in_section(db, section.id)
+                available = crud.list_trainees_available_for_section(db, section.id, include_other_sections=False)
+
+                left, right = st.columns(2)
+                with left:
+                    st.markdown("**Stagiaires de la section**")
+                    for trainee in assigned:
+                        u1, u2 = st.columns([4, 1])
+                        u1.write(f"{trainee.nom} {trainee.prenom}")
+                        if u2.button("Retirer", key=f"unassign_{section.id}_{trainee.id}"):
+                            crud.unassign_trainee(db, trainee.id, section.id)
+                            st.rerun()
+                with right:
+                    st.markdown("**Stagiaires sans section**")
+                    for trainee in available:
+                        a1, a2 = st.columns([4, 1])
+                        a1.write(f"{trainee.nom} {trainee.prenom}")
+                        if a2.button("Ajouter", key=f"assign_{section.id}_{trainee.id}"):
+                            crud.assign_trainee_to_section(db, trainee.id, section.id)
+                            st.rerun()
 
 
 def page_formations() -> None:
