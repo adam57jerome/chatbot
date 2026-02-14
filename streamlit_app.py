@@ -9,6 +9,7 @@ from tempfile import NamedTemporaryFile
 from typing import Callable, TypeVar
 
 import matplotlib.pyplot as plt
+import pandas as pd
 import streamlit as st
 from pydantic import ValidationError
 from sqlalchemy import or_, select
@@ -580,6 +581,28 @@ def page_qcm_questionnaires() -> None:
                     delete_question(db, editable_question_id)
                     toast("success", "Question supprimée")
                     st.rerun()
+
+            st.markdown("#### Export des questions (.csv)")
+            export_rows = [
+                {
+                    "questionnaire": selected.titre,
+                    "numero": q.numero,
+                    "resultat_attendu": q.resultat_attendu,
+                    "chapitre": q.chapitre,
+                    "sous_chapitre": q.sous_chapitre or "",
+                    "enonce": q.enonce or "",
+                    "points": q.points,
+                }
+                for q in questions
+            ]
+            export_df = pd.DataFrame(export_rows)
+            st.download_button(
+                "Télécharger questions.csv",
+                data=export_df.to_csv(index=False, sep=";").encode("utf-8"),
+                file_name=f"questions_{selected.id}.csv",
+                mime="text/csv",
+                key=f"download_questions_csv_{selected.id}",
+            )
 
             st.markdown("#### Import rapide des questions")
             bulk = st.text_area("Format: numero;resultat_attendu;chapitre;sous_chapitre;enonce")
