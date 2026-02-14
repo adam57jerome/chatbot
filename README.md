@@ -220,3 +220,11 @@ Utilisation:
 2. Aller dans **Synthèse > 📊 Synthèse stagiaire**.
 3. Choisir un stagiaire.
 4. Copier le bloc “Prompt prêt à l'emploi” dans ChatGPT.
+
+
+## Gouvernance documentation
+
+Toute nouvelle fonctionnalité doit mettre à jour :
+- `docs/SPEC.md` (cahier des charges)
+- `docs/CHANGELOG.md` (entrée datée des changements)
+

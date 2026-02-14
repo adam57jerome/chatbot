@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date
 
-from sqlalchemy import func, select
+from sqlalchemy import Integer, func, select
 from sqlalchemy.orm import Session
 
 from app.models import QCMAnswer, QCMAttempt, QCMQuestion, Questionnaire
@@ -77,12 +77,18 @@ def add_question(
     enonce: str | None = None,
     points: int = 1,
     chapitre: str | None = None,
+    sous_chapitre: str | None = None,
 ) -> QCMQuestion:
+    chapitre_clean = (chapitre or "").strip()
+    if not chapitre_clean:
+        raise ValueError("Le chapitre est obligatoire.")
+
     question = QCMQuestion(
         questionnaire_id=questionnaire_id,
         numero=numero,
         enonce=enonce or None,
-        chapitre=chapitre.strip() if chapitre else None,
+        chapitre=chapitre_clean,
+        sous_chapitre=(sous_chapitre.strip() if sous_chapitre else None),
         resultat_attendu=resultat_attendu.strip(),
         points=points,
     )
@@ -100,14 +106,20 @@ def update_question(
     enonce: str | None = None,
     points: int = 1,
     chapitre: str | None = None,
+    sous_chapitre: str | None = None,
 ) -> QCMQuestion | None:
     question = db.get(QCMQuestion, question_id)
     if not question:
         return None
+    chapitre_clean = (chapitre or "").strip()
+    if not chapitre_clean:
+        raise ValueError("Le chapitre est obligatoire.")
+
     question.numero = numero
     question.resultat_attendu = resultat_attendu.strip()
     question.enonce = enonce or None
-    question.chapitre = chapitre.strip() if chapitre else None
+    question.chapitre = chapitre_clean
+    question.sous_chapitre = sous_chapitre.strip() if sous_chapitre else None
     question.points = points
     db.commit()
     db.refresh(question)
@@ -125,7 +137,7 @@ def delete_question(db: Session, question_id: int) -> bool:
 
 def list_questions(db: Session, questionnaire_id: int):
     return db.scalars(
-        select(QCMQuestion).where(QCMQuestion.questionnaire_id == questionnaire_id).order_by(QCMQuestion.chapitre, QCMQuestion.numero)
+        select(QCMQuestion).where(QCMQuestion.questionnaire_id == questionnaire_id).order_by(QCMQuestion.chapitre, QCMQuestion.sous_chapitre, QCMQuestion.numero)
     ).all()
 
 
@@ -240,6 +252,77 @@ def aggregate_scores_by_questionnaire(db: Session, trainee_id: int):
     ]
 
 
+def aggregate_scores_by_chapter(db: Session, trainee_id: int):
+    rows = db.execute(
+        select(
+            QCMQuestion.chapitre.label("chapitre"),
+            func.count(QCMAnswer.id).label("questions"),
+            func.sum(QCMAnswer.est_correct.cast(Integer)).label("correct"),
+            func.sum(QCMAnswer.point_obtenu).label("points"),
+        )
+        .select_from(QCMAnswer)
+        .join(QCMQuestion, QCMQuestion.id == QCMAnswer.question_id)
+        .join(QCMAttempt, QCMAttempt.id == QCMAnswer.attempt_id)
+        .where(QCMAttempt.stagiaire_id == trainee_id)
+        .group_by(QCMQuestion.chapitre)
+        .order_by(QCMQuestion.chapitre)
+    ).all()
+
+    result = []
+    for r in rows:
+        questions = int(r.questions or 0)
+        correct = int(r.correct or 0)
+        incorrect = max(questions - correct, 0)
+        rate = round((correct / questions) * 100, 1) if questions else 0.0
+        result.append({
+            "chapitre": r.chapitre or "Général",
+            "questions": questions,
+            "correct": correct,
+            "incorrect": incorrect,
+            "taux": rate,
+        })
+    return result
+
+
+def aggregate_scores_by_subchapter(db: Session, trainee_id: int, chapitre: str | None = None):
+    sous_expr = func.coalesce(func.nullif(QCMQuestion.sous_chapitre, ""), "Sans sous-chapitre")
+    query = (
+        select(
+            QCMQuestion.chapitre.label("chapitre"),
+            sous_expr.label("sous_chapitre"),
+            func.count(QCMAnswer.id).label("questions"),
+            func.sum(QCMAnswer.est_correct.cast(Integer)).label("correct"),
+            func.sum(QCMAnswer.point_obtenu).label("points"),
+        )
+        .select_from(QCMAnswer)
+        .join(QCMQuestion, QCMQuestion.id == QCMAnswer.question_id)
+        .join(QCMAttempt, QCMAttempt.id == QCMAnswer.attempt_id)
+        .where(QCMAttempt.stagiaire_id == trainee_id)
+    )
+    if chapitre:
+        query = query.where(QCMQuestion.chapitre == chapitre)
+
+    rows = db.execute(
+        query.group_by(QCMQuestion.chapitre, sous_expr).order_by(QCMQuestion.chapitre, sous_expr)
+    ).all()
+
+    result = []
+    for r in rows:
+        questions = int(r.questions or 0)
+        correct = int(r.correct or 0)
+        incorrect = max(questions - correct, 0)
+        rate = round((correct / questions) * 100, 1) if questions else 0.0
+        result.append({
+            "chapitre": r.chapitre or "Général",
+            "sous_chapitre": r.sous_chapitre or "Sans sous-chapitre",
+            "questions": questions,
+            "correct": correct,
+            "incorrect": incorrect,
+            "taux": rate,
+        })
+    return result
+
+
 def get_trainee_qcm_summary(db: Session, trainee_id: int):
     attempts = list_attempts_by_trainee(db, trainee_id)
     total_attempts = len(attempts)
@@ -260,6 +343,8 @@ def get_trainee_qcm_summary(db: Session, trainee_id: int):
             "scores_by_questionnaire": [],
             "top3": [],
             "bottom3": [],
+            "by_chapter": [],
+            "by_subchapter": [],
         }
 
     agg = db.execute(
@@ -280,6 +365,9 @@ def get_trainee_qcm_summary(db: Session, trainee_id: int):
     top3 = scores_by_questionnaire[:3]
     bottom3 = sorted(scores_by_questionnaire, key=lambda x: x["avg_note"])[:3]
 
+    by_chapter = aggregate_scores_by_chapter(db, trainee_id)
+    by_subchapter = aggregate_scores_by_subchapter(db, trainee_id)
+
     return {
         "stats": {
             "total_attempts": int(agg[0] or 0),
@@ -295,4 +383,6 @@ def get_trainee_qcm_summary(db: Session, trainee_id: int):
         "scores_by_questionnaire": scores_by_questionnaire,
         "top3": top3,
         "bottom3": bottom3,
+        "by_chapter": by_chapter,
+        "by_subchapter": by_subchapter,
     }

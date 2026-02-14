@@ -30,6 +30,7 @@ from app.qcm_service import (
     delete_question,
     delete_questionnaire,
     get_attempt_detail,
+    aggregate_scores_by_subchapter,
     get_trainee_qcm_summary,
     list_attempts,
     list_questionnaires,
@@ -498,40 +499,105 @@ def page_qcm_questionnaires() -> None:
                 st.rerun()
 
             questions = list_questions(db, selected_id)
-            st.dataframe([{"ID": q.id, "Chapitre": q.chapitre or "Général", "N°": q.numero, "Attendu": q.resultat_attendu, "Points": q.points, "Énoncé": q.enonce or "-"} for q in questions], use_container_width=True, hide_index=True)
+            chapter_options = ["Tous"] + sorted({q.chapitre for q in questions if q.chapitre})
+            selected_chapter_filter = st.selectbox("Filtre chapitre", chapter_options, key=f"q_filter_chapter_{selected_id}")
+            filtered_questions = questions
+            if selected_chapter_filter != "Tous":
+                filtered_questions = [q for q in filtered_questions if q.chapitre == selected_chapter_filter]
+
+            subchapter_values = sorted({(q.sous_chapitre or "Sans sous-chapitre") for q in filtered_questions})
+            subchapter_options = ["Tous"] + subchapter_values
+            selected_subchapter_filter = st.selectbox("Filtre sous-chapitre", subchapter_options, key=f"q_filter_subchapter_{selected_id}")
+            if selected_subchapter_filter != "Tous":
+                filtered_questions = [q for q in filtered_questions if (q.sous_chapitre or "Sans sous-chapitre") == selected_subchapter_filter]
+
+            st.dataframe([{"ID": q.id, "Chapitre": q.chapitre, "Sous-chapitre": q.sous_chapitre or "Sans sous-chapitre", "N°": q.numero, "Attendu": q.resultat_attendu, "Points": q.points, "Énoncé": q.enonce or "-"} for q in filtered_questions], use_container_width=True, hide_index=True)
 
             with st.form("add_question"):
-                chapitre = st.text_input("Chapitre", placeholder="Français, Mathématiques, ...")
+                chapitre = st.text_input("Chapitre *", placeholder="Français, Mathématiques, ...")
+                sous_chapitre = st.text_input("Sous-chapitre", placeholder="Optionnel")
                 numero = st.number_input("Numéro", min_value=1, step=1, value=1)
                 attendu = st.text_input("Résultat attendu *", placeholder="A ou A,C")
                 enonce = st.text_area("Énoncé")
                 points = st.number_input("Points", min_value=1, value=1)
                 add_btn = st.form_submit_button("Ajouter question", type="primary")
-            if add_btn and attendu.strip():
-                add_question(db, selected_id, int(numero), attendu, enonce, int(points), chapitre)
-                toast("success", "Question ajoutée")
-                st.rerun()
+            if add_btn:
+                if not chapitre.strip():
+                    st.error("Le chapitre est obligatoire.")
+                elif not attendu.strip():
+                    st.error("Le résultat attendu est obligatoire.")
+                else:
+                    add_question(db, selected_id, int(numero), attendu, enonce, int(points), chapitre, sous_chapitre)
+                    toast("success", "Question ajoutée")
+                    st.rerun()
+
+            if questions:
+                st.markdown("#### Modifier une question")
+                editable_question_id = st.selectbox(
+                    "Question à modifier",
+                    [q.id for q in questions],
+                    format_func=lambda qid: next(
+                        f"[{q.chapitre} / {q.sous_chapitre or 'Sans sous-chapitre'}] Q{q.numero} - {q.enonce or '-'}"
+                        for q in questions if q.id == qid
+                    ),
+                    key=f"edit_question_select_{selected_id}",
+                )
+                editable_question = next(q for q in questions if q.id == editable_question_id)
+                with st.form(f"edit_question_{editable_question_id}"):
+                    ec1, ec2 = st.columns(2)
+                    e_chapitre = ec1.text_input("Chapitre *", value=editable_question.chapitre)
+                    e_sous = ec2.text_input("Sous-chapitre", value=editable_question.sous_chapitre or "")
+                    enumero = st.number_input("Numéro", min_value=1, step=1, value=int(editable_question.numero))
+                    eattendu = st.text_input("Résultat attendu *", value=editable_question.resultat_attendu)
+                    eenonce = st.text_area("Énoncé", value=editable_question.enonce or "")
+                    epoints = st.number_input("Points", min_value=1, value=int(editable_question.points))
+                    save_q = st.form_submit_button("Mettre à jour la question")
+                    delete_q = st.form_submit_button("Supprimer la question")
+
+                if save_q:
+                    if not e_chapitre.strip():
+                        st.error("Le chapitre est obligatoire.")
+                    else:
+                        update_question(
+                            db,
+                            editable_question_id,
+                            int(enumero),
+                            eattendu,
+                            eenonce,
+                            int(epoints),
+                            e_chapitre,
+                            e_sous,
+                        )
+                        toast("success", "Question mise à jour")
+                        st.rerun()
+                if delete_q:
+                    delete_question(db, editable_question_id)
+                    toast("success", "Question supprimée")
+                    st.rerun()
 
             st.markdown("#### Import rapide des questions")
-            bulk = st.text_area("Format: chapitre;numero;resultat_attendu;enonce (chapitre optionnel)")
+            bulk = st.text_area("Format: numero;resultat_attendu;chapitre;sous_chapitre;enonce")
             if st.button("Importer lignes questions"):
                 added = 0
+                rejected = 0
                 for line in bulk.splitlines():
                     parts = [p.strip() for p in line.split(";")]
-                    if not parts:
+                    if len(parts) < 3 or not parts[0].isdigit():
+                        rejected += 1
                         continue
-                    chapitre_line = None
-                    numero_idx = 0
-                    if len(parts) >= 3 and not parts[0].isdigit():
-                        chapitre_line = parts[0]
-                        numero_idx = 1
-                    if len(parts) > numero_idx + 1 and parts[numero_idx].isdigit():
-                        numero = int(parts[numero_idx])
-                        attendu_line = parts[numero_idx + 1]
-                        enonce_line = parts[numero_idx + 2] if len(parts) > numero_idx + 2 else None
-                        add_question(db, selected_id, numero, attendu_line, enonce_line, 1, chapitre_line)
-                        added += 1
-                toast("success", f"{added} question(s) importée(s)")
+                    numero = int(parts[0])
+                    attendu_line = parts[1]
+                    chapitre_line = parts[2]
+                    sous_chapitre_line = parts[3] if len(parts) > 3 else None
+                    enonce_line = parts[4] if len(parts) > 4 else None
+                    if not chapitre_line:
+                        chapitre_line = "Général"
+                    if not attendu_line:
+                        rejected += 1
+                        continue
+                    add_question(db, selected_id, numero, attendu_line, enonce_line, 1, chapitre_line, sous_chapitre_line)
+                    added += 1
+                toast("success", f"{added} question(s) importée(s), {rejected} rejetée(s)")
                 st.rerun()
 
 
@@ -668,6 +734,34 @@ def page_synthese_stagiaire() -> None:
         tcol.dataframe(summary["top3"], use_container_width=True, hide_index=True)
         bcol.dataframe(summary["bottom3"], use_container_width=True, hide_index=True)
 
+        st.markdown("#### Performance par chapitre")
+        by_chapter = summary.get("by_chapter", [])
+        if by_chapter:
+            chap_labels = [x["chapitre"] for x in by_chapter]
+            chap_rates = [x["taux"] for x in by_chapter]
+            fig3, ax3 = plt.subplots()
+            ax3.bar(chap_labels, chap_rates, color="#10b981")
+            ax3.set_ylim(0, 100)
+            ax3.set_ylabel("Taux de réussite (%)")
+            ax3.set_title("Réussite par chapitre")
+            plt.xticks(rotation=20, ha="right")
+            st.pyplot(fig3)
+
+            selected_chapter = st.selectbox("Chapitre (drill-down sous-chapitres)", chap_labels, key=f"summary_chapter_{trainee_id}")
+            by_subchapter = aggregate_scores_by_subchapter(db, trainee_id, selected_chapter)
+            sub_labels = [x["sous_chapitre"] for x in by_subchapter]
+            sub_rates = [x["taux"] for x in by_subchapter]
+            fig4, ax4 = plt.subplots()
+            ax4.bar(sub_labels, sub_rates, color="#f59e0b")
+            ax4.set_ylim(0, 100)
+            ax4.set_ylabel("Taux de réussite (%)")
+            ax4.set_title(f"Réussite par sous-chapitre — {selected_chapter}")
+            plt.xticks(rotation=20, ha="right")
+            st.pyplot(fig4)
+
+            st.markdown("#### Tableau récapitulatif chapitre / sous-chapitre")
+            st.dataframe(summary.get("by_subchapter", []), use_container_width=True, hide_index=True)
+
         st.markdown("#### Historique des tentatives")
         recap_rows = []
         for a in summary["attempts"]:
@@ -761,6 +855,20 @@ def page_help() -> None:
                 st.code(CSV_EXAMPLE, language="csv")
     with st.expander("Synthèse stagiaire"):
         st.write("Affiche indicateurs QCM, graphiques, historique et bloc ChatGPT prêt à copier-coller.")
+
+    st.markdown("### 📌 Cahier des charges")
+    spec_path = Path("docs/SPEC.md")
+    if spec_path.exists():
+        st.markdown(spec_path.read_text(encoding="utf-8"))
+    else:
+        st.info("Cahier des charges non trouvé (docs/SPEC.md).")
+
+    st.markdown("### 🧾 Historique des modifications")
+    changelog_path = Path("docs/CHANGELOG.md")
+    if changelog_path.exists():
+        st.markdown(changelog_path.read_text(encoding="utf-8"))
+    else:
+        st.info("Historique non trouvé (docs/CHANGELOG.md).")
 
 
 def page_tools() -> None:
