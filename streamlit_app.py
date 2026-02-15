@@ -551,12 +551,19 @@ def page_qcm_questionnaires() -> None:
                 # Règle Streamlit: ne pas modifier la clé du widget après instanciation.
                 # On pilote la navigation avec edit_question_id (état métier), puis on synchronise
                 # la clé fixe du widget AVANT de créer le selectbox.
-                if (
-                    st.session_state.edit_question_questionnaire_id != selected_id
-                    or st.session_state.edit_question_id not in question_ids
-                ):
+                questionnaire_changed = st.session_state.edit_question_questionnaire_id != selected_id
+                if questionnaire_changed or st.session_state.edit_question_id not in question_ids:
                     st.session_state.edit_question_questionnaire_id = selected_id
                     st.session_state.edit_question_id = question_ids[0]
+
+                widget_selected_question_id = st.session_state.get("edit_question_select")
+                if (
+                    not questionnaire_changed
+                    and widget_selected_question_id in question_ids
+                    and widget_selected_question_id != st.session_state.edit_question_id
+                ):
+                    # La sélection manuelle via la liste déroulante doit rester prioritaire.
+                    st.session_state.edit_question_id = widget_selected_question_id
 
                 if st.session_state.get("edit_question_select") != st.session_state.edit_question_id:
                     st.session_state["edit_question_select"] = st.session_state.edit_question_id
