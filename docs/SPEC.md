@@ -42,17 +42,19 @@ Application locale (Streamlit + FastAPI + SQLAlchemy + SQLite) pour gérer des s
 - Import rapide des questions (`numero;resultat_attendu;chapitre;sous_chapitre;enonce`).
 - Import CSV de questionnaire(s) multi-lignes avec création automatique des questionnaires (`questionnaire;numero;resultat_attendu;chapitre;sous_chapitre;enonce;reponses_possibles;points`).
 - Export CSV des questions d'un questionnaire (`questionnaire;numero;resultat_attendu;chapitre;sous_chapitre;enonce;reponses_possibles;points`).
+- Export **questionnaire papier (.html)** avec cases à cocher pour passation manuelle (impression crayon/papier).
+- Édition de question: navigation combinée **liste déroulante + boutons Précédent/Suivant**.
 - Ordre d'import conservé pour l'affichage des questions (pas de tri alphabétique forcé).
 - Passages et correction automatique.
 
 ### Synthèse
 - Indicateurs globaux, top/bottom questionnaires.
-- Graphiques:
-  - Correct vs Incorrect
-  - Réussite par chapitre
-  - Drill-down réussite par sous-chapitre
-- Tableau récapitulatif chapitre/sous-chapitre.
-- Radar / toile d’araignée des compétences par chapitre (échelle /20) avec export PNG/HTML.
+- UI en accordéons pour améliorer la lisibilité (vue d'ensemble, radars, historique).
+- Visualisation centrée sur les **radars**:
+  - Radar des compétences par chapitre (/20).
+  - Radar des compétences par sous-chapitre (/20) avec filtre de chapitre.
+- Tableau récapitulatif chapitre/sous-chapitre (filtrable).
+- Export radar chapitre en PNG/HTML.
 
 ### Import CSV
 - Mapping colonnes, validation, stratégies doublons.
@@ -78,8 +80,8 @@ Application locale (Streamlit + FastAPI + SQLAlchemy + SQLite) pour gérer des s
 
 ## 7) Parcours écran
 - Navigation: Gestion / Synthèse / Outils / Paramètres.
-- QCM - Questionnaires: création questionnaire, ajout/édition/suppression question, filtres chapitre/sous-chapitre, import rapide.
-- Synthèse stagiaire: sélection stagiaire, KPI, graphiques, tableau d’analyse.
+- QCM - Questionnaires: création questionnaire, ajout/édition/suppression question, filtres chapitre/sous-chapitre, import rapide, export CSV et export papier (.html).
+- Synthèse stagiaire: sélection stagiaire, KPI, accordéons, radars chapitre/sous-chapitre, tableau d’analyse.
 
 ## 8) Exigences non fonctionnelles
 - Exécution locale Windows/Linux.

@@ -55,6 +55,7 @@ from app.schemas import (
     StagiaireUpdate,
 )
 from app.utils.json_safe import find_first_non_serializable_path, to_jsonable
+from app.utils.paper_export import build_questionnaire_paper_html
 from ui.layout import inject_app_css, render_header, toast
 
 st.set_page_config(page_title="Gestion Stagiaires", layout="wide")
@@ -554,19 +555,13 @@ def page_qcm_questionnaires() -> None:
                     st.session_state.edit_question_questionnaire_id = selected_id
                     st.session_state.edit_question_id = question_ids[0]
 
-                widget_selected_question_id = st.session_state.get("edit_question_select")
-                if (
-                    not questionnaire_changed
-                    and widget_selected_question_id in question_ids
-                    and widget_selected_question_id != st.session_state.edit_question_id
-                ):
-                    # La sélection manuelle via la liste déroulante doit rester prioritaire.
-                    st.session_state.edit_question_id = widget_selected_question_id
-
                 if st.session_state.get("edit_question_select") != st.session_state.edit_question_id:
                     st.session_state["edit_question_select"] = st.session_state.edit_question_id
 
-                selected_question_id = st.selectbox(
+                def _on_edit_question_select_change() -> None:
+                    st.session_state.edit_question_id = st.session_state.get("edit_question_select")
+
+                st.selectbox(
                     "Question à modifier",
                     question_ids,
                     format_func=lambda qid: next(
@@ -574,10 +569,11 @@ def page_qcm_questionnaires() -> None:
                         for q in questions if q.id == qid
                     ),
                     key="edit_question_select",
+                    on_change=_on_edit_question_select_change,
                 )
-                st.session_state.edit_question_id = selected_question_id
 
                 editable_question_id = st.session_state.edit_question_id
+
                 editable_question = next(q for q in questions if q.id == editable_question_id)
                 with st.form(f"edit_question_{editable_question_id}"):
                     ec1, ec2 = st.columns(2)
@@ -647,6 +643,26 @@ def page_qcm_questionnaires() -> None:
                 file_name=f"questions_{selected.id}.csv",
                 mime="text/csv",
                 key=f"download_questions_csv_{selected.id}",
+            )
+
+            paper_rows = [
+                {
+                    "numero": q.numero,
+                    "chapitre": q.chapitre,
+                    "sous_chapitre": q.sous_chapitre or "",
+                    "enonce": q.enonce or "",
+                    "possible_answers": parse_possible_answers(q.reponses_possibles),
+                }
+                for q in questions
+            ]
+            paper_html = build_questionnaire_paper_html(selected.titre, paper_rows)
+            st.download_button(
+                "Télécharger questionnaire papier (.html)",
+                data=paper_html.encode("utf-8"),
+                file_name=f"questionnaire_papier_{selected.id}.html",
+                mime="text/html",
+                key=f"download_questions_paper_{selected.id}",
+                help="Ouvrez le fichier dans un navigateur puis imprimez-le pour un passage crayon/papier.",
             )
 
             st.markdown("#### Import rapide des questions")
