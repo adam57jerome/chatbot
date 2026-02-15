@@ -80,8 +80,11 @@ Application locale (Streamlit + FastAPI + SQLAlchemy + SQLite) pour gérer des s
 - `qcm_questions`: `chapitre` (NOT NULL), `sous_chapitre` (NULL).
 
 ## 7) Parcours écran
-- Navigation: Gestion / Synthèse / Outils / Paramètres.
+- Navigation: Gestion / QCM / Synthèse / Outils / Paramètres.
+- Organisation multipage avec regroupement fonctionnel (écrans allégés via accordéons).
 - QCM - Questionnaires: création questionnaire, ajout/édition/suppression question, filtres chapitre/sous-chapitre, import rapide, export CSV et export papier (.html).
+- QCM - Passages: sections en accordéon (préparation, saisie, historique) et options d'affichage par cases à cocher.
+- Stagiaires: filtres et options d'affichage (tableau/actions rapides) via cases à cocher.
 - Synthèse stagiaire: sélection stagiaire, KPI, accordéons, radars chapitre/sous-chapitre, tableau d’analyse.
 
 ## 8) Exigences non fonctionnelles

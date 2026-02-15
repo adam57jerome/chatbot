@@ -75,6 +75,9 @@ for key, value in {
     "qcm_edit_attempt_id": None,
     "edit_question_id": None,
     "edit_question_questionnaire_id": None,
+    "ui_show_trainee_table": True,
+    "ui_show_trainee_actions": True,
+    "ui_show_attempt_history": True,
 }.items():
     st.session_state.setdefault(key, value)
 
@@ -166,54 +169,64 @@ def render_trainee_form(*, db, mode: str, sections: list[Section], formations: l
 def page_stagiaires() -> None:
     render_header("Gestion des stagiaires", "Gestion / Stagiaires")
     with SessionLocal() as db:
-        q = st.text_input("Recherche", key="q_trainees")
+        with st.expander("🔎 Filtres & affichage", expanded=True):
+            q = st.text_input("Recherche", key="q_trainees")
+            fcol1, fcol2 = st.columns(2)
+            fcol1.checkbox("Afficher le tableau", key="ui_show_trainee_table")
+            fcol2.checkbox("Afficher les actions rapides", key="ui_show_trainee_actions")
+
         trainees = load_trainees(db, q)
         sections = load_sections(db)
         formations = load_formations(db, active_only=True)
 
-        if st.button("+ Nouveau stagiaire"):
+        action_col, hint_col = st.columns([1, 3])
+        if action_col.button("+ Nouveau stagiaire", type="primary"):
             st.session_state.trainee_screen = "create"
             st.rerun()
+        hint_col.caption("Astuce: utilisez les actions rapides pour modifier un profil ou ouvrir la synthèse QCM.")
 
-        if st.session_state.trainee_screen == "create":
-            render_trainee_form(db=db, mode="create", sections=sections, formations=formations)
+        if st.session_state.trainee_screen in {"create", "edit"}:
+            with st.expander("🧾 Formulaire stagiaire", expanded=True):
+                if st.session_state.trainee_screen == "create":
+                    render_trainee_form(db=db, mode="create", sections=sections, formations=formations)
+                else:
+                    trainee = crud.get_trainee_by_id(db, st.session_state.edit_trainee_id)
+                    if not trainee:
+                        toast("warning", "Stagiaire introuvable")
+                        st.session_state.trainee_screen = "list"
+                        st.session_state.edit_trainee_id = None
+                        st.rerun()
+                    render_trainee_form(db=db, mode="edit", sections=sections, formations=formations, trainee=trainee)
 
-        if st.session_state.trainee_screen == "edit":
-            trainee = crud.get_trainee_by_id(db, st.session_state.edit_trainee_id)
-            if not trainee:
-                toast("warning", "Stagiaire introuvable")
-                st.session_state.trainee_screen = "list"
-                st.session_state.edit_trainee_id = None
-                st.rerun()
-            render_trainee_form(db=db, mode="edit", sections=sections, formations=formations, trainee=trainee)
+        if st.session_state.get("ui_show_trainee_table", True):
+            with st.expander("📋 Liste des stagiaires", expanded=True):
+                st.dataframe(
+                    [
+                        {
+                            "ID": t.id,
+                            "Nom": t.nom,
+                            "Prénom": t.prenom,
+                            "Email": t.email or "-",
+                            "Formation": t.formation_souhaitee.code if t.formation_souhaitee else "Aucune",
+                        }
+                        for t in trainees
+                    ],
+                    use_container_width=True,
+                    hide_index=True,
+                )
 
-        st.dataframe(
-            [
-                {
-                    "ID": t.id,
-                    "Nom": t.nom,
-                    "Prénom": t.prenom,
-                    "Email": t.email or "-",
-                    "Formation": t.formation_souhaitee.code if t.formation_souhaitee else "Aucune",
-                }
-                for t in trainees
-            ],
-            use_container_width=True,
-            hide_index=True,
-        )
-
-        st.markdown("#### Actions rapides")
-        for trainee in trainees:
-            cols = st.columns([3, 1, 1])
-            cols[0].write(f"{trainee.nom} {trainee.prenom}")
-            if cols[1].button("✏️ Modifier", key=f"edit_trainee_btn_{trainee.id}"):
-                st.session_state.trainee_screen = "edit"
-                st.session_state.edit_trainee_id = trainee.id
-                st.rerun()
-            if cols[2].button("Voir synthèse QCM", key=f"summary_btn_{trainee.id}"):
-                st.query_params.update({"summary_trainee": str(trainee.id)})
-                st.switch_page if False else None
-                st.info("Allez dans Synthèse > 📊 Synthèse stagiaire (stagiaire présélectionné).")
+        if st.session_state.get("ui_show_trainee_actions", True):
+            with st.expander("⚡ Actions rapides", expanded=True):
+                for trainee in trainees:
+                    cols = st.columns([3, 1, 1])
+                    cols[0].write(f"{trainee.nom} {trainee.prenom}")
+                    if cols[1].button("✏️ Modifier", key=f"edit_trainee_btn_{trainee.id}"):
+                        st.session_state.trainee_screen = "edit"
+                        st.session_state.edit_trainee_id = trainee.id
+                        st.rerun()
+                    if cols[2].button("Voir synthèse QCM", key=f"summary_btn_{trainee.id}"):
+                        st.query_params.update({"summary_trainee": str(trainee.id)})
+                        st.info("Allez dans Synthèse > 📊 Synthèse stagiaire (stagiaire présélectionné).")
 
 
 def page_sections() -> None:
@@ -762,14 +775,14 @@ def page_qcm_passages() -> None:
             st.warning("Créer au moins un stagiaire et un questionnaire avant un passage.")
             return
 
-        col1, col2 = st.columns(2)
-        stagiaire_id = col1.selectbox("Stagiaire", [t.id for t in trainees], format_func=lambda i: next(f"{t.nom} {t.prenom}" for t in trainees if t.id == i))
-        questionnaire_id = col2.selectbox("Questionnaire", [q.id for q in questionnaires], format_func=lambda i: next(q.titre for q in questionnaires if q.id == i))
-
-        if st.button("Démarrer une tentative", type="primary"):
-            attempt = start_attempt(db, stagiaire_id, questionnaire_id)
-            st.session_state.qcm_attempt_id = attempt.id
-            st.rerun()
+        with st.expander("🎯 Préparer un passage", expanded=True):
+            col1, col2 = st.columns(2)
+            stagiaire_id = col1.selectbox("Stagiaire", [t.id for t in trainees], format_func=lambda i: next(f"{t.nom} {t.prenom}" for t in trainees if t.id == i))
+            questionnaire_id = col2.selectbox("Questionnaire", [q.id for q in questionnaires], format_func=lambda i: next(q.titre for q in questionnaires if q.id == i))
+            if st.button("Démarrer une tentative", type="primary"):
+                attempt = start_attempt(db, stagiaire_id, questionnaire_id)
+                st.session_state.qcm_attempt_id = attempt.id
+                st.rerun()
 
         edit_attempt_id = st.session_state.qcm_edit_attempt_id
         if edit_attempt_id:
@@ -779,71 +792,13 @@ def page_qcm_passages() -> None:
                 st.warning("Tentative introuvable.")
                 st.rerun()
 
-            st.markdown(f"#### Modifier tentative #{edit_attempt.id}")
-            questions_edit = list_questions(db, edit_attempt.questionnaire_id)
-            existing_answers = get_attempt_answers_map(db, edit_attempt.id)
-            edited_answers: dict[int, str | None] = {}
-            with st.form(f"edit_attempt_form_{edit_attempt.id}"):
-                current_chapter = None
-                for q in questions_edit:
-                    chapter_label = q.chapitre or "Général"
-                    if chapter_label != current_chapter:
-                        st.markdown(f"**Chapitre : {chapter_label}**")
-                        current_chapter = chapter_label
-                    question_label = f"Q{q.numero} - {q.enonce or 'Sans énoncé'}"
-                    choices = parse_possible_answers(q.reponses_possibles)
-                    expected_multi = "," in normalize_answer(q.resultat_attendu)
-                    current_value = existing_answers.get(q.id) or ""
-                    if choices and expected_multi:
-                        default_multi = [x.strip() for x in current_value.split(",") if x.strip()]
-                        selected_multi = st.multiselect(
-                            question_label,
-                            options=choices,
-                            default=[x for x in default_multi if x in choices],
-                            key=f"edit_ans_{edit_attempt.id}_{q.id}",
-                            help=f"Attendu normalisé: {normalize_answer(q.resultat_attendu)}",
-                        )
-                        edited_answers[q.id] = ",".join(selected_multi)
-                    elif choices:
-                        options = [""] + choices
-                        idx = options.index(current_value) if current_value in options else 0
-                        selected_one = st.selectbox(
-                            question_label,
-                            options=options,
-                            index=idx,
-                            key=f"edit_ans_{edit_attempt.id}_{q.id}",
-                            help=f"Attendu normalisé: {normalize_answer(q.resultat_attendu)}",
-                        )
-                        edited_answers[q.id] = selected_one or None
-                    else:
-                        edited_answers[q.id] = st.text_input(
-                            question_label,
-                            value=current_value,
-                            key=f"edit_ans_{edit_attempt.id}_{q.id}",
-                            help=f"Attendu normalisé: {normalize_answer(q.resultat_attendu)}",
-                        )
-                save_edit = st.form_submit_button("Enregistrer modifications", type="primary")
-                cancel_edit = st.form_submit_button("Annuler")
-
-            if cancel_edit:
-                st.session_state.qcm_edit_attempt_id = None
-                st.rerun()
-            if save_edit:
-                result = submit_attempt(db, edit_attempt.id, edited_answers)
-                st.session_state.qcm_edit_attempt_id = None
-                toast("success", f"Tentative mise à jour: {result.score_brut}/{result.total_questions}, note {result.note_sur_20}/20")
-                st.rerun()
-
-        attempt_id = st.session_state.qcm_attempt_id
-        if attempt_id:
-            attempt = get_attempt_detail(db, attempt_id)
-            if attempt and attempt.questionnaire_id == questionnaire_id and attempt.stagiaire_id == stagiaire_id:
-                questions = list_questions(db, questionnaire_id)
-                st.markdown("#### Feuille de saisie")
-                answers: dict[int, str | None] = {}
-                with st.form("submit_attempt"):
+            with st.expander(f"🛠️ Modifier tentative #{edit_attempt.id}", expanded=True):
+                questions_edit = list_questions(db, edit_attempt.questionnaire_id)
+                existing_answers = get_attempt_answers_map(db, edit_attempt.id)
+                edited_answers: dict[int, str | None] = {}
+                with st.form(f"edit_attempt_form_{edit_attempt.id}"):
                     current_chapter = None
-                    for q in questions:
+                    for q in questions_edit:
                         chapter_label = q.chapitre or "Général"
                         if chapter_label != current_chapter:
                             st.markdown(f"**Chapitre : {chapter_label}**")
@@ -851,76 +806,140 @@ def page_qcm_passages() -> None:
                         question_label = f"Q{q.numero} - {q.enonce or 'Sans énoncé'}"
                         choices = parse_possible_answers(q.reponses_possibles)
                         expected_multi = "," in normalize_answer(q.resultat_attendu)
+                        current_value = existing_answers.get(q.id) or ""
                         if choices and expected_multi:
+                            default_multi = [x.strip() for x in current_value.split(",") if x.strip()]
                             selected_multi = st.multiselect(
                                 question_label,
                                 options=choices,
-                                key=f"ans_{attempt_id}_{q.id}",
+                                default=[x for x in default_multi if x in choices],
+                                key=f"edit_ans_{edit_attempt.id}_{q.id}",
                                 help=f"Attendu normalisé: {normalize_answer(q.resultat_attendu)}",
                             )
-                            answers[q.id] = ",".join(selected_multi)
+                            edited_answers[q.id] = ",".join(selected_multi)
                         elif choices:
+                            options = [""] + choices
+                            idx = options.index(current_value) if current_value in options else 0
                             selected_one = st.selectbox(
                                 question_label,
-                                options=[""] + choices,
-                                key=f"ans_{attempt_id}_{q.id}",
+                                options=options,
+                                index=idx,
+                                key=f"edit_ans_{edit_attempt.id}_{q.id}",
                                 help=f"Attendu normalisé: {normalize_answer(q.resultat_attendu)}",
                             )
-                            answers[q.id] = selected_one or None
+                            edited_answers[q.id] = selected_one or None
                         else:
-                            answers[q.id] = st.text_input(
+                            edited_answers[q.id] = st.text_input(
                                 question_label,
-                                key=f"ans_{attempt_id}_{q.id}",
+                                value=current_value,
+                                key=f"edit_ans_{edit_attempt.id}_{q.id}",
                                 help=f"Attendu normalisé: {normalize_answer(q.resultat_attendu)}",
                             )
-                    submit_btn = st.form_submit_button("Corriger et enregistrer", type="primary")
-                    cancel_btn = st.form_submit_button("Annuler")
-                if cancel_btn:
-                    st.session_state.qcm_attempt_id = None
-                    st.rerun()
-                if submit_btn:
-                    result = submit_attempt(db, attempt_id, answers)
-                    toast("success", f"Corrigé: score {result.score_brut}/{result.total_questions}, note {result.note_sur_20}/20")
-                    st.rerun()
+                    save_edit = st.form_submit_button("Enregistrer modifications", type="primary")
+                    cancel_edit = st.form_submit_button("Annuler")
 
-        st.markdown("#### Historique des passages")
-        f1, f2, f3 = st.columns(3)
-        f_stagiaire = f1.selectbox("Filtre stagiaire", [0] + [t.id for t in trainees], format_func=lambda i: "Tous" if i == 0 else next(f"{t.nom} {t.prenom}" for t in trainees if t.id == i))
-        f_q = f2.selectbox("Filtre questionnaire", [0] + [q.id for q in questionnaires], format_func=lambda i: "Tous" if i == 0 else next(q.titre for q in questionnaires if q.id == i))
-        f_date = f3.date_input("Date", value=None)
-        attempts = list_attempts(db, f_stagiaire or None, f_q or None, f_date if f_date else None)
-        st.dataframe(
-            [
-                {
-                    "ID": a.id,
-                    "Date": a.date_passage,
-                    "Stagiaire": f"{a.stagiaire.nom} {a.stagiaire.prenom}",
-                    "Questionnaire": a.questionnaire.titre,
-                    "Score": f"{a.score_brut}/{a.total_questions}",
-                    "Note/20": a.note_sur_20,
-                }
-                for a in attempts
-            ],
-            use_container_width=True,
-            hide_index=True,
-        )
-
-        st.markdown("#### Modifier / Supprimer un passage")
-        for a in attempts:
-            c1, c2, c3 = st.columns([5, 1, 1])
-            c1.write(f"#{a.id} — {a.stagiaire.nom} {a.stagiaire.prenom} — {a.questionnaire.titre} — {a.note_sur_20}/20")
-            if c2.button("✏️", key=f"edit_attempt_{a.id}", help="Modifier cette tentative"):
-                st.session_state.qcm_edit_attempt_id = a.id
-                st.session_state.qcm_attempt_id = None
-                st.rerun()
-            if c3.button("🗑️", key=f"delete_attempt_{a.id}", help="Supprimer cette tentative"):
-                delete_attempt(db, a.id)
-                if st.session_state.qcm_edit_attempt_id == a.id:
+                if cancel_edit:
                     st.session_state.qcm_edit_attempt_id = None
-                if st.session_state.qcm_attempt_id == a.id:
-                    st.session_state.qcm_attempt_id = None
-                toast("success", "Passage supprimé")
-                st.rerun()
+                    st.rerun()
+                if save_edit:
+                    result = submit_attempt(db, edit_attempt.id, edited_answers)
+                    st.session_state.qcm_edit_attempt_id = None
+                    toast("success", f"Tentative mise à jour: {result.score_brut}/{result.total_questions}, note {result.note_sur_20}/20")
+                    st.rerun()
+
+        attempt_id = st.session_state.qcm_attempt_id
+        if attempt_id:
+            attempt = get_attempt_detail(db, attempt_id)
+            if attempt and attempt.questionnaire_id == questionnaire_id and attempt.stagiaire_id == stagiaire_id:
+                questions = list_questions(db, questionnaire_id)
+                with st.expander("📝 Feuille de saisie", expanded=True):
+                    answers: dict[int, str | None] = {}
+                    with st.form("submit_attempt"):
+                        current_chapter = None
+                        for q in questions:
+                            chapter_label = q.chapitre or "Général"
+                            if chapter_label != current_chapter:
+                                st.markdown(f"**Chapitre : {chapter_label}**")
+                                current_chapter = chapter_label
+                            question_label = f"Q{q.numero} - {q.enonce or 'Sans énoncé'}"
+                            choices = parse_possible_answers(q.reponses_possibles)
+                            expected_multi = "," in normalize_answer(q.resultat_attendu)
+                            if choices and expected_multi:
+                                selected_multi = st.multiselect(
+                                    question_label,
+                                    options=choices,
+                                    key=f"ans_{attempt_id}_{q.id}",
+                                    help=f"Attendu normalisé: {normalize_answer(q.resultat_attendu)}",
+                                )
+                                answers[q.id] = ",".join(selected_multi)
+                            elif choices:
+                                selected_one = st.selectbox(
+                                    question_label,
+                                    options=[""] + choices,
+                                    key=f"ans_{attempt_id}_{q.id}",
+                                    help=f"Attendu normalisé: {normalize_answer(q.resultat_attendu)}",
+                                )
+                                answers[q.id] = selected_one or None
+                            else:
+                                answers[q.id] = st.text_input(
+                                    question_label,
+                                    key=f"ans_{attempt_id}_{q.id}",
+                                    help=f"Attendu normalisé: {normalize_answer(q.resultat_attendu)}",
+                                )
+                        submit_btn = st.form_submit_button("Corriger et enregistrer", type="primary")
+                        cancel_btn = st.form_submit_button("Annuler")
+                    if cancel_btn:
+                        st.session_state.qcm_attempt_id = None
+                        st.rerun()
+                    if submit_btn:
+                        result = submit_attempt(db, attempt_id, answers)
+                        toast("success", f"Corrigé: score {result.score_brut}/{result.total_questions}, note {result.note_sur_20}/20")
+                        st.rerun()
+
+        with st.expander("📚 Historique des passages", expanded=True):
+            hcol1, hcol2 = st.columns(2)
+            hcol1.checkbox("Afficher le tableau des passages", key="ui_show_attempt_history")
+            show_actions = hcol2.checkbox("Afficher les actions Modifier/Supprimer", value=True, key="ui_show_attempt_actions")
+            f1, f2, f3 = st.columns(3)
+            f_stagiaire = f1.selectbox("Filtre stagiaire", [0] + [t.id for t in trainees], format_func=lambda i: "Tous" if i == 0 else next(f"{t.nom} {t.prenom}" for t in trainees if t.id == i))
+            f_q = f2.selectbox("Filtre questionnaire", [0] + [q.id for q in questionnaires], format_func=lambda i: "Tous" if i == 0 else next(q.titre for q in questionnaires if q.id == i))
+            f_date = f3.date_input("Date", value=None)
+            attempts = list_attempts(db, f_stagiaire or None, f_q or None, f_date if f_date else None)
+
+            if st.session_state.get("ui_show_attempt_history", True):
+                st.dataframe(
+                    [
+                        {
+                            "ID": a.id,
+                            "Date": a.date_passage,
+                            "Stagiaire": f"{a.stagiaire.nom} {a.stagiaire.prenom}",
+                            "Questionnaire": a.questionnaire.titre,
+                            "Score": f"{a.score_brut}/{a.total_questions}",
+                            "Note/20": a.note_sur_20,
+                        }
+                        for a in attempts
+                    ],
+                    use_container_width=True,
+                    hide_index=True,
+                )
+
+            if show_actions:
+                st.markdown("#### Modifier / Supprimer un passage")
+                for a in attempts:
+                    c1, c2, c3 = st.columns([5, 1, 1])
+                    c1.write(f"#{a.id} — {a.stagiaire.nom} {a.stagiaire.prenom} — {a.questionnaire.titre} — {a.note_sur_20}/20")
+                    if c2.button("✏️", key=f"edit_attempt_{a.id}", help="Modifier cette tentative"):
+                        st.session_state.qcm_edit_attempt_id = a.id
+                        st.session_state.qcm_attempt_id = None
+                        st.rerun()
+                    if c3.button("🗑️", key=f"delete_attempt_{a.id}", help="Supprimer cette tentative"):
+                        delete_attempt(db, a.id)
+                        if st.session_state.qcm_edit_attempt_id == a.id:
+                            st.session_state.qcm_edit_attempt_id = None
+                        if st.session_state.qcm_attempt_id == a.id:
+                            st.session_state.qcm_attempt_id = None
+                        toast("success", "Passage supprimé")
+                        st.rerun()
 
 
 def page_synthese_stagiaire() -> None:
@@ -1149,79 +1168,81 @@ def page_help() -> None:
 def page_tools() -> None:
     render_header("Outils", "Outils / Initialisation")
 
-    if st.button("Initialiser la base", type="primary"):
-        init_db()
-        toast("success", "Base initialisée")
-
-    st.markdown("---")
-    st.markdown("### Sauvegarde / Restauration")
+    with st.expander("🧰 Maintenance rapide", expanded=True):
+        st.caption("Actions sensibles: pensez à sauvegarder avant toute restauration.")
+        if st.button("Initialiser la base", type="primary"):
+            init_db()
+            toast("success", "Base initialisée")
 
     sqlite_path = get_sqlite_db_path()
     if not sqlite_path:
         st.warning("Sauvegarde/restauration indisponible: DATABASE_URL n'est pas une base SQLite locale.")
         return
 
-    st.caption(f"Base active: {sqlite_path}")
+    with st.expander("💾 Sauvegarde", expanded=True):
+        st.caption(f"Base active: {sqlite_path}")
+        c1, c2 = st.columns([1, 2])
+        if c1.button("Créer une sauvegarde", key="create_backup_btn"):
+            try:
+                backup_file = create_sqlite_backup()
+                toast("success", f"Sauvegarde créée: {backup_file.name}")
+                st.session_state["latest_backup_path"] = str(backup_file)
+                st.rerun()
+            except Exception as exc:  # noqa: BLE001
+                st.error(f"Erreur sauvegarde: {exc}")
 
-    c1, c2 = st.columns([1, 2])
-    if c1.button("Créer une sauvegarde", key="create_backup_btn"):
-        try:
-            backup_file = create_sqlite_backup()
-            toast("success", f"Sauvegarde créée: {backup_file.name}")
-            st.session_state["latest_backup_path"] = str(backup_file)
-            st.rerun()
-        except Exception as exc:  # noqa: BLE001
-            st.error(f"Erreur sauvegarde: {exc}")
+        latest_backup = st.session_state.get("latest_backup_path")
+        if latest_backup:
+            backup_path = Path(latest_backup)
+            if backup_path.exists():
+                c2.download_button(
+                    "Télécharger la dernière sauvegarde",
+                    data=backup_path.read_bytes(),
+                    file_name=backup_path.name,
+                    mime="application/octet-stream",
+                    key="download_latest_backup",
+                )
 
-    latest_backup = st.session_state.get("latest_backup_path")
-    if latest_backup:
-        backup_path = Path(latest_backup)
-        if backup_path.exists():
-            c2.download_button(
-                "Télécharger la dernière sauvegarde",
-                data=backup_path.read_bytes(),
-                file_name=backup_path.name,
-                mime="application/octet-stream",
-                key="download_latest_backup",
-            )
+    with st.expander("♻️ Restaurer une sauvegarde", expanded=False):
+        backups = list_sqlite_backups()
+        if backups:
+            backup_map = {b.name: b for b in backups}
+            selected_name = st.selectbox("Sauvegardes disponibles", list(backup_map.keys()), key="backup_select")
+            confirm_restore = st.checkbox("Je confirme remplacer la base actuelle par cette sauvegarde", key="confirm_restore_file")
+            if st.button("Restaurer la sauvegarde sélectionnée", key="restore_selected_backup"):
+                if not confirm_restore:
+                    st.warning("Veuillez confirmer la restauration.")
+                else:
+                    try:
+                        restore_sqlite_backup(backup_map[selected_name])
+                        toast("success", f"Base restaurée depuis {selected_name}")
+                        st.rerun()
+                    except Exception as exc:  # noqa: BLE001
+                        st.error(f"Erreur restauration: {exc}")
+        else:
+            st.info("Aucune sauvegarde locale disponible.")
 
-    backups = list_sqlite_backups()
-    if backups:
-        backup_map = {b.name: b for b in backups}
-        selected_name = st.selectbox("Sauvegardes disponibles", list(backup_map.keys()), key="backup_select")
-        confirm_restore = st.checkbox("Je confirme remplacer la base actuelle par cette sauvegarde", key="confirm_restore_file")
-        if st.button("Restaurer la sauvegarde sélectionnée", key="restore_selected_backup"):
-            if not confirm_restore:
+        st.markdown("#### Restaurer depuis un fichier local")
+        uploaded_backup = st.file_uploader("Importer un fichier .db de sauvegarde", type=["db"], key="upload_backup_db")
+        confirm_upload_restore = st.checkbox("Je confirme remplacer la base actuelle avec ce fichier", key="confirm_restore_upload")
+        if st.button("Restaurer le fichier importé", key="restore_uploaded_backup"):
+            if not uploaded_backup:
+                st.warning("Aucun fichier sélectionné.")
+            elif not confirm_upload_restore:
                 st.warning("Veuillez confirmer la restauration.")
             else:
+                with NamedTemporaryFile(delete=False, suffix=".db") as tmp:
+                    tmp.write(uploaded_backup.getvalue())
+                    tmp_path = Path(tmp.name)
                 try:
-                    restore_sqlite_backup(backup_map[selected_name])
-                    toast("success", f"Base restaurée depuis {selected_name}")
+                    restore_sqlite_backup(tmp_path)
+                    toast("success", "Base restaurée depuis le fichier importé")
                     st.rerun()
                 except Exception as exc:  # noqa: BLE001
                     st.error(f"Erreur restauration: {exc}")
-
-    st.markdown("#### Restaurer depuis un fichier local")
-    uploaded_backup = st.file_uploader("Importer un fichier .db de sauvegarde", type=["db"], key="upload_backup_db")
-    confirm_upload_restore = st.checkbox("Je confirme remplacer la base actuelle avec ce fichier", key="confirm_restore_upload")
-    if st.button("Restaurer le fichier importé", key="restore_uploaded_backup"):
-        if not uploaded_backup:
-            st.warning("Aucun fichier sélectionné.")
-        elif not confirm_upload_restore:
-            st.warning("Veuillez confirmer la restauration.")
-        else:
-            with NamedTemporaryFile(delete=False, suffix=".db") as tmp:
-                tmp.write(uploaded_backup.getvalue())
-                tmp_path = Path(tmp.name)
-            try:
-                restore_sqlite_backup(tmp_path)
-                toast("success", "Base restaurée depuis le fichier importé")
-                st.rerun()
-            except Exception as exc:  # noqa: BLE001
-                st.error(f"Erreur restauration: {exc}")
-            finally:
-                if tmp_path.exists():
-                    tmp_path.unlink()
+                finally:
+                    if tmp_path.exists():
+                        tmp_path.unlink()
 
 
 def page_about() -> None:
@@ -1246,6 +1267,8 @@ if hasattr(st, "navigation") and hasattr(st, "Page"):
                 st.Page(page_stagiaires, title="Stagiaires", icon="👨‍🎓"),
                 st.Page(page_sections, title="Sections", icon="🏫"),
                 st.Page(page_formations, title="Formations", icon="🎓"),
+            ],
+            "QCM": [
                 st.Page(page_qcm_questionnaires, title="QCM - Questionnaires", icon="📝"),
                 st.Page(page_qcm_passages, title="QCM - Passages", icon="✅"),
             ],

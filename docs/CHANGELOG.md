@@ -1,5 +1,13 @@
 # Historique des modifications
 
+## 2026-02-16
+### Module UI/UX
+- Refonte visuelle légère (style plus moderne, lisible et cohérent) via `static/app.css`.
+- Navigation clarifiée: séparation du menu **QCM** du bloc **Gestion** dans la navigation multipage.
+- Page Stagiaires: ajout d’accordéons (filtres, formulaire, liste, actions rapides) + cases à cocher d’affichage.
+- Page QCM - Passages: organisation en accordéons (préparer passage, modifier tentative, feuille de saisie, historique) + options d’affichage via checkboxes.
+- Page Outils: regroupement en accordéons pour maintenance/sauvegarde/restauration.
+
 ## 2026-02-15
 ### Module QCM / Synthèse / Export
 - QCM Questionnaire: correction de la navigation d’édition pour supporter **à la fois** la sélection via liste déroulante et les boutons **Précédent/Suivant** sans conflit d’état Streamlit.
