@@ -544,9 +544,10 @@ def page_qcm_questionnaires() -> None:
 
             if questions:
                 st.markdown("#### Modifier une question")
+                question_ids = [q.id for q in questions]
                 editable_question_id = st.selectbox(
                     "Question à modifier",
-                    [q.id for q in questions],
+                    question_ids,
                     format_func=lambda qid: next(
                         f"[{q.chapitre} / {q.sous_chapitre or 'Sans sous-chapitre'}] Q{q.numero} - {q.enonce or '-'}"
                         for q in questions if q.id == qid
@@ -586,6 +587,15 @@ def page_qcm_questionnaires() -> None:
                 if delete_q:
                     delete_question(db, editable_question_id)
                     toast("success", "Question supprimée")
+                    st.rerun()
+
+                nav_left, nav_right = st.columns(2)
+                current_idx = question_ids.index(editable_question_id)
+                if nav_left.button("⬅️ Question précédente", key=f"prev_question_{selected_id}", disabled=current_idx == 0):
+                    st.session_state[f"edit_question_select_{selected_id}"] = question_ids[current_idx - 1]
+                    st.rerun()
+                if nav_right.button("Question suivante ➡️", key=f"next_question_{selected_id}", disabled=current_idx == len(question_ids) - 1):
+                    st.session_state[f"edit_question_select_{selected_id}"] = question_ids[current_idx + 1]
                     st.rerun()
 
             st.markdown("#### Export des questions (.csv)")
