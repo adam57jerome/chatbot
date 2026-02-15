@@ -1,5 +1,12 @@
 # Historique des modifications
 
+## 2026-02-17
+### Module UI/UX (itération 2)
+- Ajout d'un mode global **Confort / Compact** dans Préférences (densité + tables compactes).
+- Uniformisation de l'UI sur Sections, Formations et QCM-Questionnaires avec accordéons + options d'affichage (checkboxes).
+- Ajout d'un **assistant de page** (3 étapes) sur les écrans métiers principaux.
+- Ajout de **KPI rapides** sur les pages de gestion pour guider l'usage (volumes et état courant).
+
 ## 2026-02-16
 ### Module UI/UX
 - Refonte visuelle légère (style plus moderne, lisible et cohérent) via `static/app.css`.

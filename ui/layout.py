@@ -14,6 +14,22 @@ def inject_app_css() -> None:
     if css_path.exists():
         st.markdown(f"<style>{css_path.read_text(encoding='utf-8')}</style>", unsafe_allow_html=True)
 
+    density = st.session_state.get("ui_density", "Confort")
+    compact_tables = st.session_state.get("ui_compact_tables", False)
+    spacing = "0.5rem" if density == "Compact" else "1rem"
+    font_scale = "0.96" if density == "Compact" else "1"
+    row_height = "0.8rem" if compact_tables else "1rem"
+    st.markdown(
+        f"""
+        <style>
+            .block-container {{ padding-top: {spacing}; }}
+            html, body, [class*="css"] {{ font-size: calc(16px * {font_scale}); }}
+            [data-testid="stDataFrame"] div[role="gridcell"] {{ padding-top: {row_height}; padding-bottom: {row_height}; }}
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
 
 def toast(kind: str, message: str) -> None:
     if hasattr(st, "toast"):
@@ -38,3 +54,9 @@ def render_header(title: str, breadcrumb: str, actions: list[tuple[str, Callable
                         callback()
                         st.rerun()
         st.markdown("</div>", unsafe_allow_html=True)
+
+
+def render_page_assistant(steps: list[str]) -> None:
+    with st.expander("🧭 Assistant de page — quoi faire maintenant ?", expanded=False):
+        for step in steps[:3]:
+            st.markdown(f"- {step}")

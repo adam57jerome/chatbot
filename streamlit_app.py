@@ -56,7 +56,7 @@ from app.schemas import (
 )
 from app.utils.json_safe import find_first_non_serializable_path, to_jsonable
 from app.utils.paper_export import build_questionnaire_paper_html, build_questionnaire_scan_html
-from ui.layout import inject_app_css, render_header, toast
+from ui.layout import inject_app_css, render_header, render_page_assistant, toast
 
 st.set_page_config(page_title="Gestion Stagiaires", layout="wide")
 
@@ -78,6 +78,15 @@ for key, value in {
     "ui_show_trainee_table": True,
     "ui_show_trainee_actions": True,
     "ui_show_attempt_history": True,
+    "ui_show_attempt_actions": True,
+    "ui_show_section_table": True,
+    "ui_show_section_actions": True,
+    "ui_show_formation_table": True,
+    "ui_show_formation_actions": True,
+    "ui_show_qcm_questions_table": True,
+    "ui_show_qcm_editor": True,
+    "ui_density": "Confort",
+    "ui_compact_tables": False,
 }.items():
     st.session_state.setdefault(key, value)
 
@@ -168,6 +177,11 @@ def render_trainee_form(*, db, mode: str, sections: list[Section], formations: l
 
 def page_stagiaires() -> None:
     render_header("Gestion des stagiaires", "Gestion / Stagiaires")
+    render_page_assistant([
+        "1) Filtrer/rechercher un stagiaire.",
+        "2) Créer ou modifier sa fiche.",
+        "3) Ouvrir sa synthèse QCM si nécessaire.",
+    ])
     with SessionLocal() as db:
         with st.expander("🔎 Filtres & affichage", expanded=True):
             q = st.text_input("Recherche", key="q_trainees")
@@ -178,6 +192,11 @@ def page_stagiaires() -> None:
         trainees = load_trainees(db, q)
         sections = load_sections(db)
         formations = load_formations(db, active_only=True)
+
+        k1, k2, k3 = st.columns(3)
+        k1.metric("Stagiaires", len(trainees))
+        k2.metric("Sections", len(sections))
+        k3.metric("Formations actives", len(formations))
 
         action_col, hint_col = st.columns([1, 3])
         if action_col.button("+ Nouveau stagiaire", type="primary"):
@@ -231,11 +250,24 @@ def page_stagiaires() -> None:
 
 def page_sections() -> None:
     render_header("Gestion des sections", "Gestion / Sections")
+    render_page_assistant([
+        "1) Filtrer les sections et vérifier les effectifs.",
+        "2) Créer ou modifier la section.",
+        "3) Gérer les affectations stagiaires.",
+    ])
     with SessionLocal() as db:
-        query = st.text_input("Recherche section", key="q_sections")
-        sections, _total = crud.list_sections(db, q=query, page=1, per_page=500)
+        with st.expander("🔎 Filtres & affichage", expanded=True):
+            query = st.text_input("Recherche section", key="q_sections")
+            cfa, cfb = st.columns(2)
+            cfa.checkbox("Afficher le tableau", key="ui_show_section_table")
+            cfb.checkbox("Afficher les actions", key="ui_show_section_actions")
 
-        if st.button("+ Nouvelle section", key="new_section_btn"):
+        sections, _total = crud.list_sections(db, q=query, page=1, per_page=500)
+        k1, k2 = st.columns(2)
+        k1.metric("Sections", len(sections))
+        k2.metric("Stagiaires affectés", sum(len(s.stagiaires) for s in sections))
+
+        if st.button("+ Nouvelle section", key="new_section_btn", type="primary"):
             st.session_state.section_screen = "create"
             st.session_state.edit_section_id = None
             st.rerun()
@@ -249,122 +281,138 @@ def page_sections() -> None:
                 st.session_state.edit_section_id = None
                 st.rerun()
 
-            st.markdown("<div class='app-card'>", unsafe_allow_html=True)
-            st.markdown(f"#### {'Modifier section' if is_edit else 'Nouvelle section'}")
-            with st.form(f"section_form_{'edit' if is_edit else 'create'}"):
-                c1, c2 = st.columns(2)
-                code = c1.text_input("Code *", value=section.code if section else "")
-                nom = c2.text_input("Nom *", value=section.nom if section else "")
-                c3, c4 = st.columns(2)
-                date_debut = c3.date_input("Date début", value=section.date_debut if section and section.date_debut else None)
-                date_fin = c4.date_input("Date fin", value=section.date_fin if section and section.date_fin else None)
-                description = st.text_area("Description", value=section.description or "" if section else "")
-                save = st.form_submit_button("💾 Enregistrer", type="primary")
-                cancel = st.form_submit_button("Annuler")
+            with st.expander("🧾 Formulaire section", expanded=True):
+                st.markdown("<div class='app-card'>", unsafe_allow_html=True)
+                st.markdown(f"#### {'Modifier section' if is_edit else 'Nouvelle section'}")
+                with st.form(f"section_form_{'edit' if is_edit else 'create'}"):
+                    c1, c2 = st.columns(2)
+                    code = c1.text_input("Code *", value=section.code if section else "")
+                    nom = c2.text_input("Nom *", value=section.nom if section else "")
+                    c3, c4 = st.columns(2)
+                    date_debut = c3.date_input("Date début", value=section.date_debut if section and section.date_debut else None)
+                    date_fin = c4.date_input("Date fin", value=section.date_fin if section and section.date_fin else None)
+                    description = st.text_area("Description", value=section.description or "" if section else "")
+                    save = st.form_submit_button("💾 Enregistrer", type="primary")
+                    cancel = st.form_submit_button("Annuler")
 
-            if cancel:
-                st.session_state.section_screen = "list"
-                st.session_state.edit_section_id = None
-                st.rerun()
-
-            if save:
-                try:
-                    payload = SectionUpdate(
-                        code=code,
-                        nom=nom,
-                        date_debut=date_debut,
-                        date_fin=date_fin,
-                        description=description or None,
-                    )
-                    if is_edit and section:
-                        crud.update_section(db, section.id, payload)
-                        toast("success", "Section mise à jour")
-                    else:
-                        crud.create_section(db, SectionCreate(**payload.model_dump()))
-                        toast("success", "Section créée")
+                if cancel:
                     st.session_state.section_screen = "list"
                     st.session_state.edit_section_id = None
                     st.rerun()
-                except ValidationError as exc:
-                    st.error("Validation: " + ", ".join(err["msg"] for err in exc.errors()))
-                except IntegrityError:
-                    db.rollback()
-                    st.error("Erreur: code section déjà utilisé")
 
-            st.markdown("</div>", unsafe_allow_html=True)
+                if save:
+                    try:
+                        payload = SectionUpdate(
+                            code=code,
+                            nom=nom,
+                            date_debut=date_debut,
+                            date_fin=date_fin,
+                            description=description or None,
+                        )
+                        if is_edit and section:
+                            crud.update_section(db, section.id, payload)
+                            toast("success", "Section mise à jour")
+                        else:
+                            crud.create_section(db, SectionCreate(**payload.model_dump()))
+                            toast("success", "Section créée")
+                        st.session_state.section_screen = "list"
+                        st.session_state.edit_section_id = None
+                        st.rerun()
+                    except ValidationError as exc:
+                        st.error("Validation: " + ", ".join(err["msg"] for err in exc.errors()))
+                    except IntegrityError:
+                        db.rollback()
+                        st.error("Erreur: code section déjà utilisé")
 
-        st.dataframe(
-            [
-                {
-                    "ID": s.id,
-                    "Code": s.code,
-                    "Nom": s.nom,
-                    "Date début": s.date_debut,
-                    "Date fin": s.date_fin,
-                    "Stagiaires": len(s.stagiaires),
-                }
-                for s in sections
-            ],
-            use_container_width=True,
-            hide_index=True,
-        )
+                st.markdown("</div>", unsafe_allow_html=True)
 
-        st.markdown("#### Actions")
-        for section in sections:
-            c1, c2, c3, c4 = st.columns([4, 1, 1, 1])
-            c1.write(f"{section.code} — {section.nom}")
-            if c2.button("👥", key=f"section_assign_{section.id}", help="Assigner des stagiaires"):
-                st.session_state["selected_section_for_assign"] = section.id
-            if c3.button("✏️", key=f"section_edit_{section.id}"):
-                st.session_state.section_screen = "edit"
-                st.session_state.edit_section_id = section.id
-                st.rerun()
-            if c4.button("🗑️", key=f"section_delete_{section.id}"):
-                crud.delete_section_safely(db, section.id)
-                toast("success", "Section supprimée")
-                st.rerun()
+        if st.session_state.get("ui_show_section_table", True):
+            with st.expander("📋 Liste des sections", expanded=True):
+                st.dataframe(
+                    [
+                        {
+                            "ID": s.id,
+                            "Code": s.code,
+                            "Nom": s.nom,
+                            "Date début": s.date_debut,
+                            "Date fin": s.date_fin,
+                            "Stagiaires": len(s.stagiaires),
+                        }
+                        for s in sections
+                    ],
+                    use_container_width=True,
+                    hide_index=True,
+                )
+
+        if st.session_state.get("ui_show_section_actions", True):
+            with st.expander("⚡ Actions", expanded=True):
+                for section in sections:
+                    c1, c2, c3, c4 = st.columns([4, 1, 1, 1])
+                    c1.write(f"{section.code} — {section.nom}")
+                    if c2.button("👥", key=f"section_assign_{section.id}", help="Assigner des stagiaires"):
+                        st.session_state["selected_section_for_assign"] = section.id
+                    if c3.button("✏️", key=f"section_edit_{section.id}"):
+                        st.session_state.section_screen = "edit"
+                        st.session_state.edit_section_id = section.id
+                        st.rerun()
+                    if c4.button("🗑️", key=f"section_delete_{section.id}"):
+                        crud.delete_section_safely(db, section.id)
+                        toast("success", "Section supprimée")
+                        st.rerun()
 
         selected_section_id = st.session_state.get("selected_section_for_assign")
         if selected_section_id:
             section = crud.get_section_by_id(db, selected_section_id)
             if section:
-                st.markdown("---")
-                st.markdown(f"#### Affectations — {section.code} / {section.nom}")
-                assigned = crud.list_trainees_in_section(db, section.id)
-                available = crud.list_trainees_available_for_section(db, section.id, include_other_sections=False)
+                with st.expander(f"👥 Affectations — {section.code} / {section.nom}", expanded=True):
+                    assigned = crud.list_trainees_in_section(db, section.id)
+                    available = crud.list_trainees_available_for_section(db, section.id, include_other_sections=False)
 
-                left, right = st.columns(2)
-                with left:
-                    st.markdown("**Stagiaires de la section**")
-                    for trainee in assigned:
-                        u1, u2 = st.columns([4, 1])
-                        u1.write(f"{trainee.nom} {trainee.prenom}")
-                        if u2.button("Retirer", key=f"unassign_{section.id}_{trainee.id}"):
-                            crud.unassign_trainee(db, trainee.id, section.id)
-                            st.rerun()
-                with right:
-                    st.markdown("**Stagiaires sans section**")
-                    for trainee in available:
-                        a1, a2 = st.columns([4, 1])
-                        a1.write(f"{trainee.nom} {trainee.prenom}")
-                        if a2.button("Ajouter", key=f"assign_{section.id}_{trainee.id}"):
-                            crud.assign_trainee_to_section(db, trainee.id, section.id)
-                            st.rerun()
+                    left, right = st.columns(2)
+                    with left:
+                        st.markdown("**Stagiaires de la section**")
+                        for trainee in assigned:
+                            u1, u2 = st.columns([4, 1])
+                            u1.write(f"{trainee.nom} {trainee.prenom}")
+                            if u2.button("Retirer", key=f"unassign_{section.id}_{trainee.id}"):
+                                crud.unassign_trainee(db, trainee.id, section.id)
+                                st.rerun()
+                    with right:
+                        st.markdown("**Stagiaires sans section**")
+                        for trainee in available:
+                            a1, a2 = st.columns([4, 1])
+                            a1.write(f"{trainee.nom} {trainee.prenom}")
+                            if a2.button("Ajouter", key=f"assign_{section.id}_{trainee.id}"):
+                                crud.assign_trainee_to_section(db, trainee.id, section.id)
+                                st.rerun()
 
 
 def page_formations() -> None:
     render_header("Gestion des formations", "Gestion / Formations")
+    render_page_assistant([
+        "1) Filtrer par statut actif/inactif.",
+        "2) Créer ou mettre à jour une formation.",
+        "3) Nettoyer les formations obsolètes si besoin.",
+    ])
     with SessionLocal() as db:
-        query = st.text_input("Recherche formation", key="q_formations")
-        active_filter = st.selectbox(
-            "Statut",
-            ["Toutes", "Actives", "Inactives"],
-            key="formation_status_filter",
-        )
+        with st.expander("🔎 Filtres & affichage", expanded=True):
+            query = st.text_input("Recherche formation", key="q_formations")
+            active_filter = st.selectbox(
+                "Statut",
+                ["Toutes", "Actives", "Inactives"],
+                key="formation_status_filter",
+            )
+            fc1, fc2 = st.columns(2)
+            fc1.checkbox("Afficher le tableau", key="ui_show_formation_table")
+            fc2.checkbox("Afficher les actions", key="ui_show_formation_actions")
+
         actif_filter = {"Toutes": None, "Actives": "active", "Inactives": "inactive"}[active_filter]
         formations, _total = crud.list_formations(db, q=query, actif_filter=actif_filter, page=1, per_page=500)
+        m1, m2 = st.columns(2)
+        m1.metric("Formations", len(formations))
+        m2.metric("Actives", len([f for f in formations if f.actif]))
 
-        if st.button("+ Nouvelle formation", key="new_formation_btn"):
+        if st.button("+ Nouvelle formation", key="new_formation_btn", type="primary"):
             st.session_state.formation_screen = "create"
             st.session_state.edit_formation_id = None
             st.rerun()
@@ -378,74 +426,78 @@ def page_formations() -> None:
                 st.session_state.edit_formation_id = None
                 st.rerun()
 
-            st.markdown("<div class='app-card'>", unsafe_allow_html=True)
-            st.markdown(f"#### {'Modifier formation' if is_edit else 'Nouvelle formation'}")
-            with st.form(f"formation_form_{'edit' if is_edit else 'create'}"):
-                c1, c2 = st.columns(2)
-                code = c1.text_input("Code *", value=formation.code if formation else "")
-                nom = c2.text_input("Nom *", value=formation.nom if formation else "")
-                description = st.text_area("Description", value=formation.description or "" if formation else "")
-                actif = st.checkbox("Formation active", value=formation.actif if formation else True)
-                save = st.form_submit_button("💾 Enregistrer", type="primary")
-                cancel = st.form_submit_button("Annuler")
+            with st.expander("🧾 Formulaire formation", expanded=True):
+                st.markdown("<div class='app-card'>", unsafe_allow_html=True)
+                st.markdown(f"#### {'Modifier formation' if is_edit else 'Nouvelle formation'}")
+                with st.form(f"formation_form_{'edit' if is_edit else 'create'}"):
+                    c1, c2 = st.columns(2)
+                    code = c1.text_input("Code *", value=formation.code if formation else "")
+                    nom = c2.text_input("Nom *", value=formation.nom if formation else "")
+                    description = st.text_area("Description", value=formation.description or "" if formation else "")
+                    actif = st.checkbox("Formation active", value=formation.actif if formation else True)
+                    save = st.form_submit_button("💾 Enregistrer", type="primary")
+                    cancel = st.form_submit_button("Annuler")
 
-            if cancel:
-                st.session_state.formation_screen = "list"
-                st.session_state.edit_formation_id = None
-                st.rerun()
-
-            if save:
-                try:
-                    payload = FormationUpdate(
-                        code=code,
-                        nom=nom,
-                        description=description or None,
-                        actif=actif,
-                    )
-                    if is_edit and formation:
-                        crud.update_formation(db, formation.id, payload)
-                        toast("success", "Formation mise à jour")
-                    else:
-                        crud.create_formation(db, FormationCreate(**payload.model_dump()))
-                        toast("success", "Formation créée")
+                if cancel:
                     st.session_state.formation_screen = "list"
                     st.session_state.edit_formation_id = None
                     st.rerun()
-                except ValidationError as exc:
-                    st.error("Validation: " + ", ".join(err["msg"] for err in exc.errors()))
-                except IntegrityError:
-                    db.rollback()
-                    st.error("Erreur: code formation déjà utilisé")
 
-            st.markdown("</div>", unsafe_allow_html=True)
+                if save:
+                    try:
+                        payload = FormationUpdate(
+                            code=code,
+                            nom=nom,
+                            description=description or None,
+                            actif=actif,
+                        )
+                        if is_edit and formation:
+                            crud.update_formation(db, formation.id, payload)
+                            toast("success", "Formation mise à jour")
+                        else:
+                            crud.create_formation(db, FormationCreate(**payload.model_dump()))
+                            toast("success", "Formation créée")
+                        st.session_state.formation_screen = "list"
+                        st.session_state.edit_formation_id = None
+                        st.rerun()
+                    except ValidationError as exc:
+                        st.error("Validation: " + ", ".join(err["msg"] for err in exc.errors()))
+                    except IntegrityError:
+                        db.rollback()
+                        st.error("Erreur: code formation déjà utilisé")
 
-        st.dataframe(
-            [
-                {
-                    "ID": f.id,
-                    "Code": f.code,
-                    "Nom": f.nom,
-                    "Active": "Oui" if f.actif else "Non",
-                    "Souhaits": len(f.stagiaires_souhaits),
-                }
-                for f in formations
-            ],
-            use_container_width=True,
-            hide_index=True,
-        )
+                st.markdown("</div>", unsafe_allow_html=True)
 
-        st.markdown("#### Actions")
-        for formation in formations:
-            c1, c2, c3 = st.columns([5, 1, 1])
-            c1.write(f"{formation.code} — {formation.nom}")
-            if c2.button("✏️", key=f"formation_edit_{formation.id}"):
-                st.session_state.formation_screen = "edit"
-                st.session_state.edit_formation_id = formation.id
-                st.rerun()
-            if c3.button("🗑️", key=f"formation_delete_{formation.id}"):
-                crud.delete_formation_safely(db, formation.id)
-                toast("success", "Formation supprimée")
-                st.rerun()
+        if st.session_state.get("ui_show_formation_table", True):
+            with st.expander("📋 Liste des formations", expanded=True):
+                st.dataframe(
+                    [
+                        {
+                            "ID": f.id,
+                            "Code": f.code,
+                            "Nom": f.nom,
+                            "Active": "Oui" if f.actif else "Non",
+                            "Souhaits": len(f.stagiaires_souhaits),
+                        }
+                        for f in formations
+                    ],
+                    use_container_width=True,
+                    hide_index=True,
+                )
+
+        if st.session_state.get("ui_show_formation_actions", True):
+            with st.expander("⚡ Actions", expanded=True):
+                for formation in formations:
+                    c1, c2, c3 = st.columns([5, 1, 1])
+                    c1.write(f"{formation.code} — {formation.nom}")
+                    if c2.button("✏️", key=f"formation_edit_{formation.id}"):
+                        st.session_state.formation_screen = "edit"
+                        st.session_state.edit_formation_id = formation.id
+                        st.rerun()
+                    if c3.button("🗑️", key=f"formation_delete_{formation.id}"):
+                        crud.delete_formation_safely(db, formation.id)
+                        toast("success", "Formation supprimée")
+                        st.rerun()
 
 
 def page_import_csv() -> None:
@@ -487,9 +539,20 @@ def page_import_csv() -> None:
 
 def page_qcm_questionnaires() -> None:
     render_header("QCM - Questionnaires", "QCM / Questionnaires")
+    render_page_assistant([
+        "1) Créer ou sélectionner un questionnaire.",
+        "2) Ajouter/éditer les questions avec filtres chapitre/sous-chapitre.",
+        "3) Exporter (CSV/papier/scan) ou importer en lot.",
+    ])
     with SessionLocal() as db:
-        q = st.text_input("Recherche titre", key="q_qcm")
+        with st.expander("🔎 Filtres & affichage", expanded=True):
+            q = st.text_input("Recherche titre", key="q_qcm")
+            qc1, qc2 = st.columns(2)
+            qc1.checkbox("Afficher la table questionnaires", key="ui_show_qcm_questions_table")
+            qc2.checkbox("Afficher le bloc édition question", key="ui_show_qcm_editor")
         questionnaires = list_questionnaires(db, q)
+
+        st.metric("Questionnaires", len(questionnaires))
 
         with st.form("new_qcm"):
             titre = st.text_input("Titre questionnaire *")
@@ -500,7 +563,9 @@ def page_qcm_questionnaires() -> None:
             toast("success", "Questionnaire créé")
             st.rerun()
 
-        st.dataframe([{"ID": qn.id, "Titre": qn.titre, "Description": qn.description or "-"} for qn in questionnaires], use_container_width=True, hide_index=True)
+        if st.session_state.get("ui_show_qcm_questions_table", True):
+            with st.expander("📋 Liste des questionnaires", expanded=True):
+                st.dataframe([{"ID": qn.id, "Titre": qn.titre, "Description": qn.description or "-"} for qn in questionnaires], use_container_width=True, hide_index=True)
 
         if questionnaires:
             selected_id = st.selectbox("Questionnaire", [q.id for q in questionnaires], format_func=lambda x: next(q.titre for q in questionnaires if q.id == x))
@@ -556,7 +621,7 @@ def page_qcm_questionnaires() -> None:
                     toast("success", "Question ajoutée")
                     st.rerun()
 
-            if questions:
+            if st.session_state.get("ui_show_qcm_editor", True) and questions:
                 st.markdown("#### Modifier une question")
                 question_ids = [q.id for q in questions]
 
@@ -632,7 +697,7 @@ def page_qcm_questionnaires() -> None:
                 if nav_right.button("Question suivante ➡️", key="next_question", disabled=current_idx == len(question_ids) - 1):
                     st.session_state.edit_question_id = question_ids[current_idx + 1]
                     st.rerun()
-            else:
+            elif st.session_state.get("ui_show_qcm_editor", True):
                 st.info("Aucune question disponible pour l'édition.")
 
             st.markdown("#### Export des questions (.csv)")
@@ -1253,8 +1318,16 @@ def page_about() -> None:
 
 def page_preferences() -> None:
     render_header("Préférences", "Paramètres / Préférences")
-    if db := get_sqlite_db_path():
-        st.code(db, language="text")
+    with st.expander("🎨 Confort d'affichage", expanded=True):
+        st.radio("Densité globale", ["Confort", "Compact"], key="ui_density", horizontal=True)
+        st.checkbox("Tableaux compacts", key="ui_compact_tables")
+        if st.button("Appliquer l'affichage", key="apply_ui_preferences"):
+            toast("success", "Préférences d'affichage appliquées")
+            st.rerun()
+
+    with st.expander("🗂️ Informations techniques", expanded=False):
+        if db := get_sqlite_db_path():
+            st.code(db, language="text")
 
 
 init_db()
