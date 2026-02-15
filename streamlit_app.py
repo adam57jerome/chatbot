@@ -56,7 +56,15 @@ from app.schemas import (
 )
 from app.utils.json_safe import find_first_non_serializable_path, to_jsonable
 from app.utils.paper_export import build_questionnaire_paper_html, build_questionnaire_scan_html
-from ui.layout import inject_app_css, render_header, render_page_assistant, toast
+from ui.layout import (
+    get_role_ui_preset,
+    inject_app_css,
+    render_context_actions,
+    render_header,
+    render_onboarding,
+    render_page_assistant,
+    toast,
+)
 
 st.set_page_config(page_title="Gestion Stagiaires", layout="wide")
 
@@ -87,6 +95,7 @@ for key, value in {
     "ui_show_qcm_editor": True,
     "ui_density": "Confort",
     "ui_compact_tables": False,
+    "ui_role_profile": "Admin",
 }.items():
     st.session_state.setdefault(key, value)
 
@@ -182,6 +191,11 @@ def page_stagiaires() -> None:
         "2) Créer ou modifier sa fiche.",
         "3) Ouvrir sa synthèse QCM si nécessaire.",
     ])
+    render_onboarding("stagiaires", [
+        "Le bloc Filtres & affichage permet de simplifier la vue.",
+        "Le formulaire ne s'affiche que pendant création/modification.",
+        "Utilisez Actions rapides pour accéder à la synthèse QCM.",
+    ])
     with SessionLocal() as db:
         with st.expander("🔎 Filtres & affichage", expanded=True):
             q = st.text_input("Recherche", key="q_trainees")
@@ -255,6 +269,11 @@ def page_sections() -> None:
         "2) Créer ou modifier la section.",
         "3) Gérer les affectations stagiaires.",
     ])
+    render_onboarding("sections", [
+        "Utilisez les filtres pour réduire la liste.",
+        "Le bouton + Nouvelle section est toujours disponible en haut.",
+        "Passez par l'action 👥 pour gérer les affectations.",
+    ])
     with SessionLocal() as db:
         with st.expander("🔎 Filtres & affichage", expanded=True):
             query = st.text_input("Recherche section", key="q_sections")
@@ -267,7 +286,10 @@ def page_sections() -> None:
         k1.metric("Sections", len(sections))
         k2.metric("Stagiaires affectés", sum(len(s.stagiaires) for s in sections))
 
-        if st.button("+ Nouvelle section", key="new_section_btn", type="primary"):
+        clicked_action = render_context_actions([
+            ("new_section", "+ Nouvelle section", "primary"),
+        ])
+        if clicked_action == "new_section":
             st.session_state.section_screen = "create"
             st.session_state.edit_section_id = None
             st.rerun()
@@ -394,6 +416,11 @@ def page_formations() -> None:
         "2) Créer ou mettre à jour une formation.",
         "3) Nettoyer les formations obsolètes si besoin.",
     ])
+    render_onboarding("formations", [
+        "Le mode Compact réduit la densité visuelle si vous gérez beaucoup de lignes.",
+        "Utilisez le filtre de statut pour isoler les formations inactives.",
+        "Les actions d'édition/suppression sont regroupées dans la section Actions.",
+    ])
     with SessionLocal() as db:
         with st.expander("🔎 Filtres & affichage", expanded=True):
             query = st.text_input("Recherche formation", key="q_formations")
@@ -412,7 +439,10 @@ def page_formations() -> None:
         m1.metric("Formations", len(formations))
         m2.metric("Actives", len([f for f in formations if f.actif]))
 
-        if st.button("+ Nouvelle formation", key="new_formation_btn", type="primary"):
+        clicked_action = render_context_actions([
+            ("new_formation", "+ Nouvelle formation", "primary"),
+        ])
+        if clicked_action == "new_formation":
             st.session_state.formation_screen = "create"
             st.session_state.edit_formation_id = None
             st.rerun()
@@ -502,28 +532,46 @@ def page_formations() -> None:
 
 def page_import_csv() -> None:
     render_header("Import CSV", "Outils / Import CSV")
-    upload = st.file_uploader("Fichier CSV", type=["csv"])
-    sep_choice = st.selectbox("Séparateur", ["auto", ",", ";", "\t"], help=HELP_TEXTS["import_separator"])
-    encoding_choice = st.selectbox("Encodage", ["auto", "utf-8", "latin-1"], help=HELP_TEXTS["import_encoding"])
-    has_header = st.checkbox("Le fichier a une ligne d'en-tête", value=True)
+    render_page_assistant([
+        "1) Déposer un CSV et vérifier l'aperçu.",
+        "2) Mapper les colonnes et choisir la stratégie.",
+        "3) Lancer l'import puis télécharger le rapport.",
+    ])
+    render_onboarding("import_csv", [
+        "Commencez par vérifier séparateur/encodage.",
+        "Le mapping est obligatoire pour nom et prénom.",
+        "Téléchargez le rapport en fin d'import pour audit.",
+    ])
+
+    with st.expander("⚙️ Paramètres d'import", expanded=True):
+        upload = st.file_uploader("Fichier CSV", type=["csv"])
+        p1, p2, p3 = st.columns(3)
+        sep_choice = p1.selectbox("Séparateur", ["auto", ",", ";", "	"], help=HELP_TEXTS["import_separator"])
+        encoding_choice = p2.selectbox("Encodage", ["auto", "utf-8", "latin-1"], help=HELP_TEXTS["import_encoding"])
+        has_header = p3.checkbox("Le fichier a une ligne d'en-tête", value=True)
     if not upload:
         return
 
     df = parse_csv(upload.getvalue(), sep=sep_choice, encoding=encoding_choice, has_header=has_header)
-    st.dataframe(df.head(20), use_container_width=True)
-    cols = ["-- Ignorer --"] + list(df.columns)
-    mapping = {
-        "nom": st.selectbox("nom *", cols, key="map_nom"),
-        "prenom": st.selectbox("prenom *", cols, key="map_prenom"),
-        "email": st.selectbox("email", cols, key="map_email"),
-        "telephone": st.selectbox("telephone", cols, key="map_tel"),
-        "notes": st.selectbox("notes", cols, key="map_notes"),
-        "section_code": st.selectbox("section_code", cols, key="map_section"),
-        "formation_code": st.selectbox("formation_code", cols, key="map_formation"),
-    }
-    strategy = st.selectbox("Stratégie doublons", ["skip", "update", "strict"], help=HELP_TEXTS["import_strategy"])
-    create_sections = st.checkbox("Créer sections manquantes")
-    create_formations = st.checkbox("Créer formations manquantes")
+    k1, k2 = st.columns(2)
+    k1.metric("Lignes détectées", len(df))
+    k2.metric("Colonnes détectées", len(df.columns))
+
+    with st.expander("👀 Aperçu & mapping", expanded=True):
+        st.dataframe(df.head(20), use_container_width=True)
+        cols = ["-- Ignorer --"] + list(df.columns)
+        mapping = {
+            "nom": st.selectbox("nom *", cols, key="map_nom"),
+            "prenom": st.selectbox("prenom *", cols, key="map_prenom"),
+            "email": st.selectbox("email", cols, key="map_email"),
+            "telephone": st.selectbox("telephone", cols, key="map_tel"),
+            "notes": st.selectbox("notes", cols, key="map_notes"),
+            "section_code": st.selectbox("section_code", cols, key="map_section"),
+            "formation_code": st.selectbox("formation_code", cols, key="map_formation"),
+        }
+        strategy = st.selectbox("Stratégie doublons", ["skip", "update", "strict"], help=HELP_TEXTS["import_strategy"])
+        create_sections = st.checkbox("Créer sections manquantes")
+        create_formations = st.checkbox("Créer formations manquantes")
 
     with SessionLocal() as db:
         options = ImportOptions(create_sections, create_formations, strategy)
@@ -544,6 +592,11 @@ def page_qcm_questionnaires() -> None:
         "2) Ajouter/éditer les questions avec filtres chapitre/sous-chapitre.",
         "3) Exporter (CSV/papier/scan) ou importer en lot.",
     ])
+    render_onboarding("qcm_questionnaires", [
+        "Créez un questionnaire puis ajoutez des questions dans le bloc dédié.",
+        "Activez/désactivez les blocs d'affichage via les checkboxes en haut.",
+        "Les exports CSV/papier/scan sont disponibles en bas de page.",
+    ])
     with SessionLocal() as db:
         with st.expander("🔎 Filtres & affichage", expanded=True):
             q = st.text_input("Recherche titre", key="q_qcm")
@@ -554,14 +607,15 @@ def page_qcm_questionnaires() -> None:
 
         st.metric("Questionnaires", len(questionnaires))
 
-        with st.form("new_qcm"):
-            titre = st.text_input("Titre questionnaire *")
-            description = st.text_area("Description")
-            create_btn = st.form_submit_button("Créer questionnaire", type="primary")
-        if create_btn and titre.strip():
-            create_questionnaire(db, titre, description)
-            toast("success", "Questionnaire créé")
-            st.rerun()
+        with st.expander("🧾 Nouveau questionnaire", expanded=False):
+            with st.form("new_qcm"):
+                titre = st.text_input("Titre questionnaire *")
+                description = st.text_area("Description")
+                create_btn = st.form_submit_button("Créer questionnaire", type="primary")
+            if create_btn and titre.strip():
+                create_questionnaire(db, titre, description)
+                toast("success", "Questionnaire créé")
+                st.rerun()
 
         if st.session_state.get("ui_show_qcm_questions_table", True):
             with st.expander("📋 Liste des questionnaires", expanded=True):
@@ -833,6 +887,11 @@ def page_qcm_questionnaires() -> None:
 
 def page_qcm_passages() -> None:
     render_header("QCM - Passages / Saisie", "QCM / Passages")
+    render_onboarding("qcm_passages", [
+        "Commencez par préparer une tentative en haut de page.",
+        "Les sections sont repliables pour garder une vue claire.",
+        "Utilisez l'historique pour corriger ou supprimer un passage.",
+    ])
     with SessionLocal() as db:
         trainees = load_trainees(db, "")
         questionnaires = list_questionnaires(db)
@@ -1199,35 +1258,56 @@ def page_synthese_stagiaire() -> None:
 
 def page_help() -> None:
     render_header("📘 Aide", "Aide / Guide utilisateur")
-    st.markdown("### Sommaire\n- Vue d'ensemble\n- Stagiaires\n- Sections\n- Formations\n- QCM\n- Synthèse\n- Import CSV\n- Sauvegarde / BDD")
-    for k, title in [
-        ("overview", "Vue d'ensemble"),
-        ("stagiaires", "Stagiaires"),
-        ("sections", "Sections"),
-        ("formations", "Formations"),
-        ("import_csv", "Import CSV"),
-        ("database", "Sauvegarde / Base de données"),
-    ]:
-        with st.expander(title):
-            st.write(AIDE_SECTIONS[k])
-            if k == "import_csv":
-                st.code(CSV_EXAMPLE, language="csv")
-    with st.expander("Synthèse stagiaire"):
-        st.write("Affiche indicateurs QCM, graphiques, historique et bloc ChatGPT prêt à copier-coller.")
+    render_page_assistant([
+        "1) Lire le sommaire et ouvrir le module concerné.",
+        "2) Copier l'exemple CSV si vous préparez un import.",
+        "3) Consulter SPEC/CHANGELOG en bas de page.",
+    ])
+    render_onboarding("help", [
+        "Les sections sont en accordéons pour aller à l'essentiel.",
+        "Le bloc Import CSV contient un exemple prêt à copier.",
+        "SPEC et CHANGELOG sont affichés dans les deux derniers blocs.",
+    ])
 
-    st.markdown("### 📌 Cahier des charges")
-    spec_path = Path("docs/SPEC.md")
-    if spec_path.exists():
-        st.markdown(spec_path.read_text(encoding="utf-8"))
-    else:
-        st.info("Cahier des charges non trouvé (docs/SPEC.md).")
+    st.metric("Rubriques d'aide", len(AIDE_SECTIONS))
+    with st.expander("📚 Sommaire & guides", expanded=True):
+        st.markdown("""### Sommaire
+- Vue d'ensemble
+- Stagiaires
+- Sections
+- Formations
+- QCM
+- Synthèse
+- Import CSV
+- Sauvegarde / BDD""")
+        for k, title in [
+            ("overview", "Vue d'ensemble"),
+            ("stagiaires", "Stagiaires"),
+            ("sections", "Sections"),
+            ("formations", "Formations"),
+            ("import_csv", "Import CSV"),
+            ("database", "Sauvegarde / Base de données"),
+        ]:
+            with st.expander(title):
+                st.write(AIDE_SECTIONS[k])
+                if k == "import_csv":
+                    st.code(CSV_EXAMPLE, language="csv")
+        with st.expander("Synthèse stagiaire"):
+            st.write("Affiche indicateurs QCM, graphiques, historique et bloc ChatGPT prêt à copier-coller.")
 
-    st.markdown("### 🧾 Historique des modifications")
-    changelog_path = Path("docs/CHANGELOG.md")
-    if changelog_path.exists():
-        st.markdown(changelog_path.read_text(encoding="utf-8"))
-    else:
-        st.info("Historique non trouvé (docs/CHANGELOG.md).")
+    with st.expander("📌 Cahier des charges", expanded=False):
+        spec_path = Path("docs/SPEC.md")
+        if spec_path.exists():
+            st.markdown(spec_path.read_text(encoding="utf-8"))
+        else:
+            st.info("Cahier des charges non trouvé (docs/SPEC.md).")
+
+    with st.expander("🧾 Historique des modifications", expanded=False):
+        changelog_path = Path("docs/CHANGELOG.md")
+        if changelog_path.exists():
+            st.markdown(changelog_path.read_text(encoding="utf-8"))
+        else:
+            st.info("Historique non trouvé (docs/CHANGELOG.md).")
 
 
 def page_tools() -> None:
@@ -1319,8 +1399,15 @@ def page_about() -> None:
 def page_preferences() -> None:
     render_header("Préférences", "Paramètres / Préférences")
     with st.expander("🎨 Confort d'affichage", expanded=True):
+        selected_role = st.selectbox("Profil UI", ["Admin", "Formateur"], key="ui_role_profile")
         st.radio("Densité globale", ["Confort", "Compact"], key="ui_density", horizontal=True)
         st.checkbox("Tableaux compacts", key="ui_compact_tables")
+        if st.button("Appliquer le preset du profil", key="apply_role_ui_preset"):
+            preset = get_role_ui_preset(selected_role)
+            for preset_key, preset_value in preset.items():
+                st.session_state[preset_key] = preset_value
+            toast("success", f"Preset {selected_role} appliqué")
+            st.rerun()
         if st.button("Appliquer l'affichage", key="apply_ui_preferences"):
             toast("success", "Préférences d'affichage appliquées")
             st.rerun()

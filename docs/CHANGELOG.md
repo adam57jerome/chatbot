@@ -1,5 +1,12 @@
 # Historique des modifications
 
+## 2026-02-18
+### Module UI/UX (itération 3)
+- Ajout d'un **profil UI par rôle** (Admin/Formateur) avec presets d'affichage automatiques depuis Préférences.
+- Ajout d'une barre d'actions contextuelle sur les pages longues (actions principales en tête de page).
+- Ajout d'un mode **onboarding** (découverte rapide) au premier passage sur plusieurs écrans métiers.
+- Uniformisation de **Import CSV** et **Aide** avec assistant, accordéons et KPI légers.
+
 ## 2026-02-17
 ### Module UI/UX (itération 2)
 - Ajout d'un mode global **Confort / Compact** dans Préférences (densité + tables compactes).
