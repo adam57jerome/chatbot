@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import json
 from datetime import date
 
 from sqlalchemy import Integer, func, select
@@ -24,6 +25,25 @@ def normalize_answer(value: str | None) -> str:
         items = sorted([part for part in cleaned.split(",") if part])
         return ",".join(items)
     return cleaned
+
+
+def parse_possible_answers(value: str | None) -> list[str]:
+    if not value:
+        return []
+    try:
+        raw = json.loads(value)
+        if isinstance(raw, list):
+            return [str(x).strip() for x in raw if str(x).strip()]
+    except Exception:
+        pass
+    return [part.strip() for part in value.split("|") if part.strip()]
+
+
+def encode_possible_answers(values: list[str] | None) -> str | None:
+    if not values:
+        return None
+    cleaned = [v.strip() for v in values if isinstance(v, str) and v.strip()]
+    return json.dumps(cleaned, ensure_ascii=False) if cleaned else None
 
 
 def compute_note_sur_20(score_brut: int, total_questions: int) -> float:
@@ -78,6 +98,7 @@ def add_question(
     points: int = 1,
     chapitre: str | None = None,
     sous_chapitre: str | None = None,
+    possible_answers: list[str] | None = None,
 ) -> QCMQuestion:
     chapitre_clean = (chapitre or "").strip()
     if not chapitre_clean:
@@ -89,6 +110,7 @@ def add_question(
         enonce=enonce or None,
         chapitre=chapitre_clean,
         sous_chapitre=(sous_chapitre.strip() if sous_chapitre else None),
+        reponses_possibles=encode_possible_answers(possible_answers),
         resultat_attendu=resultat_attendu.strip(),
         points=points,
     )
@@ -107,6 +129,7 @@ def update_question(
     points: int = 1,
     chapitre: str | None = None,
     sous_chapitre: str | None = None,
+    possible_answers: list[str] | None = None,
 ) -> QCMQuestion | None:
     question = db.get(QCMQuestion, question_id)
     if not question:
@@ -120,6 +143,7 @@ def update_question(
     question.enonce = enonce or None
     question.chapitre = chapitre_clean
     question.sous_chapitre = sous_chapitre.strip() if sous_chapitre else None
+    question.reponses_possibles = encode_possible_answers(possible_answers)
     question.points = points
     db.commit()
     db.refresh(question)

@@ -38,9 +38,10 @@ Application locale (Streamlit + FastAPI + SQLAlchemy + SQLite) pour gérer des s
 - Questions avec hiérarchie:
   - **chapitre obligatoire**
   - **sous-chapitre optionnel**
+  - **réponses possibles à nombre variable** (optionnel, 0..n)
 - Import rapide des questions (`numero;resultat_attendu;chapitre;sous_chapitre;enonce`).
-- Import CSV de questionnaire(s) multi-lignes avec création automatique des questionnaires (`questionnaire;numero;resultat_attendu;chapitre;sous_chapitre;enonce;points`).
-- Export CSV des questions d'un questionnaire (`questionnaire;numero;resultat_attendu;chapitre;sous_chapitre;enonce;points`).
+- Import CSV de questionnaire(s) multi-lignes avec création automatique des questionnaires (`questionnaire;numero;resultat_attendu;chapitre;sous_chapitre;enonce;reponses_possibles;points`).
+- Export CSV des questions d'un questionnaire (`questionnaire;numero;resultat_attendu;chapitre;sous_chapitre;enonce;reponses_possibles;points`).
 - Ordre d'import conservé pour l'affichage des questions (pas de tri alphabétique forcé).
 - Passages et correction automatique.
 

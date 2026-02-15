@@ -13,3 +13,4 @@
 - Import QCM: ajout de l'import CSV de questionnaire(s) et conservation de l'ordre d'import des questions (pas de tri alphabétique).
 - QCM: ajout de l'export des questions d'un questionnaire en fichier `.csv`.
 - Synthèse: ajout du graphique radar (toile d'araignée) du profil de compétences avec export PNG (kaleido) ou HTML.
+- QCM Questionnaire: ajout des réponses possibles (nombre variable) à la création/édition/import/export et utilisation en saisie des passages.

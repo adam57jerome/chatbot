@@ -7,6 +7,7 @@ from app.qcm_service import (
     create_questionnaire,
     delete_attempt,
     get_attempt_answers_map,
+    parse_possible_answers,
     get_trainee_qcm_summary,
     start_attempt,
     submit_attempt,
@@ -112,3 +113,23 @@ def test_list_questions_keeps_insert_order_not_alphabetical():
 
         questions = list_questions(db, q.id)
         assert [q.id for q in questions] == [q1.id, q2.id, q3.id]
+
+
+def test_possible_answers_are_stored_and_parsed_variable_count():
+    with SessionLocal() as db:
+        q = create_questionnaire(db, "QCM Choix", "desc")
+        question = add_question(
+            db,
+            q.id,
+            1,
+            "A,C",
+            chapitre="Français",
+            possible_answers=["A", "B", "C", "D"],
+        )
+        parsed = parse_possible_answers(question.reponses_possibles)
+        assert parsed == ["A", "B", "C", "D"]
+
+
+def test_possible_answers_empty_returns_empty_list():
+    assert parse_possible_answers(None) == []
+    assert parse_possible_answers("") == []

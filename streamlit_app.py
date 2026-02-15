@@ -42,6 +42,7 @@ from app.qcm_service import (
     list_questionnaires,
     list_questions,
     normalize_answer,
+    parse_possible_answers,
     start_attempt,
     submit_attempt,
     update_question,
@@ -519,7 +520,7 @@ def page_qcm_questionnaires() -> None:
             if selected_subchapter_filter != "Tous":
                 filtered_questions = [q for q in filtered_questions if (q.sous_chapitre or "Sans sous-chapitre") == selected_subchapter_filter]
 
-            st.dataframe([{"ID": q.id, "Chapitre": q.chapitre, "Sous-chapitre": q.sous_chapitre or "Sans sous-chapitre", "N°": q.numero, "Attendu": q.resultat_attendu, "Points": q.points, "Énoncé": q.enonce or "-"} for q in filtered_questions], use_container_width=True, hide_index=True)
+            st.dataframe([{"ID": q.id, "Chapitre": q.chapitre, "Sous-chapitre": q.sous_chapitre or "Sans sous-chapitre", "N°": q.numero, "Attendu": q.resultat_attendu, "Points": q.points, "Réponses possibles": " | ".join(parse_possible_answers(q.reponses_possibles)) or "-", "Énoncé": q.enonce or "-"} for q in filtered_questions], use_container_width=True, hide_index=True)
 
             with st.form("add_question"):
                 chapitre = st.text_input("Chapitre *", placeholder="Français, Mathématiques, ...")
@@ -527,6 +528,7 @@ def page_qcm_questionnaires() -> None:
                 numero = st.number_input("Numéro", min_value=1, step=1, value=1)
                 attendu = st.text_input("Résultat attendu *", placeholder="A ou A,C")
                 enonce = st.text_area("Énoncé")
+                possible_answers_text = st.text_area("Réponses possibles (une par ligne)", help="Nombre de réponses variable")
                 points = st.number_input("Points", min_value=1, value=1)
                 add_btn = st.form_submit_button("Ajouter question", type="primary")
             if add_btn:
@@ -535,7 +537,8 @@ def page_qcm_questionnaires() -> None:
                 elif not attendu.strip():
                     st.error("Le résultat attendu est obligatoire.")
                 else:
-                    add_question(db, selected_id, int(numero), attendu, enonce, int(points), chapitre, sous_chapitre)
+                    possible_answers = [line.strip() for line in possible_answers_text.splitlines() if line.strip()]
+                    add_question(db, selected_id, int(numero), attendu, enonce, int(points), chapitre, sous_chapitre, possible_answers)
                     toast("success", "Question ajoutée")
                     st.rerun()
 
@@ -558,6 +561,7 @@ def page_qcm_questionnaires() -> None:
                     enumero = st.number_input("Numéro", min_value=1, step=1, value=int(editable_question.numero))
                     eattendu = st.text_input("Résultat attendu *", value=editable_question.resultat_attendu)
                     eenonce = st.text_area("Énoncé", value=editable_question.enonce or "")
+                    e_possible = st.text_area("Réponses possibles (une par ligne)", value="\n".join(parse_possible_answers(editable_question.reponses_possibles)))
                     epoints = st.number_input("Points", min_value=1, value=int(editable_question.points))
                     save_q = st.form_submit_button("Mettre à jour la question")
                     delete_q = st.form_submit_button("Supprimer la question")
@@ -575,6 +579,7 @@ def page_qcm_questionnaires() -> None:
                             int(epoints),
                             e_chapitre,
                             e_sous,
+                            [line.strip() for line in e_possible.splitlines() if line.strip()],
                         )
                         toast("success", "Question mise à jour")
                         st.rerun()
@@ -591,6 +596,7 @@ def page_qcm_questionnaires() -> None:
                     "resultat_attendu": q.resultat_attendu,
                     "chapitre": q.chapitre,
                     "sous_chapitre": q.sous_chapitre or "",
+                    "reponses_possibles": "|".join(parse_possible_answers(q.reponses_possibles)),
                     "enonce": q.enonce or "",
                     "points": q.points,
                 }
@@ -606,7 +612,7 @@ def page_qcm_questionnaires() -> None:
             )
 
             st.markdown("#### Import rapide des questions")
-            bulk = st.text_area("Format: numero;resultat_attendu;chapitre;sous_chapitre;enonce")
+            bulk = st.text_area("Format: numero;resultat_attendu;chapitre;sous_chapitre;enonce;reponses_possibles")
             if st.button("Importer lignes questions"):
                 added = 0
                 rejected = 0
@@ -620,18 +626,19 @@ def page_qcm_questionnaires() -> None:
                     chapitre_line = parts[2]
                     sous_chapitre_line = parts[3] if len(parts) > 3 else None
                     enonce_line = parts[4] if len(parts) > 4 else None
+                    possible_answers_line = [p.strip() for p in (parts[5] if len(parts) > 5 else "").split("|") if p.strip()]
                     if not chapitre_line:
                         chapitre_line = "Général"
                     if not attendu_line:
                         rejected += 1
                         continue
-                    add_question(db, selected_id, numero, attendu_line, enonce_line, 1, chapitre_line, sous_chapitre_line)
+                    add_question(db, selected_id, numero, attendu_line, enonce_line, 1, chapitre_line, sous_chapitre_line, possible_answers_line)
                     added += 1
                 toast("success", f"{added} question(s) importée(s), {rejected} rejetée(s)")
                 st.rerun()
 
             st.markdown("#### Importer questionnaire(s) depuis CSV")
-            st.caption("Colonnes attendues: questionnaire;numero;resultat_attendu;chapitre;sous_chapitre;enonce;points (chapitre obligatoire, numero optionnel)")
+            st.caption("Colonnes attendues: questionnaire;numero;resultat_attendu;chapitre;sous_chapitre;enonce;reponses_possibles;points (chapitre obligatoire, numero optionnel)")
             csv_file = st.file_uploader("Fichier CSV questionnaires", type=["csv"], key="qcm_questionnaires_csv")
             if st.button("Importer questionnaire(s) CSV", key="import_qcm_csv_btn"):
                 if not csv_file:
@@ -654,6 +661,7 @@ def page_qcm_questionnaires() -> None:
                             chapitre_line = (row.get("chapitre") or "").strip()
                             sous_chapitre_line = (row.get("sous_chapitre") or "").strip() or None
                             enonce_line = (row.get("enonce") or "").strip() or None
+                            possible_answers_line = [x.strip() for x in ((row.get("reponses_possibles") or "").split("|")) if x.strip()]
                             points_raw = (row.get("points") or "1").strip()
                             numero_raw = (row.get("numero") or "").strip()
 
@@ -674,7 +682,7 @@ def page_qcm_questionnaires() -> None:
                                 auto_num[q_title] += 1
 
                             points = int(points_raw) if points_raw.isdigit() and int(points_raw) > 0 else 1
-                            add_question(db, qcache[q_title], numero, attendu_line, enonce_line, points, chapitre_line, sous_chapitre_line)
+                            add_question(db, qcache[q_title], numero, attendu_line, enonce_line, points, chapitre_line, sous_chapitre_line, possible_answers_line)
                             added_qs += 1
 
                         toast("success", f"{created_q} questionnaire(s) créé(s), {added_qs} question(s) importée(s), {rejected} ligne(s) rejetée(s)")
@@ -718,12 +726,38 @@ def page_qcm_passages() -> None:
                     if chapter_label != current_chapter:
                         st.markdown(f"**Chapitre : {chapter_label}**")
                         current_chapter = chapter_label
-                    edited_answers[q.id] = st.text_input(
-                        f"Q{q.numero} - {q.enonce or 'Sans énoncé'}",
-                        value=existing_answers.get(q.id) or "",
-                        key=f"edit_ans_{edit_attempt.id}_{q.id}",
-                        help=f"Attendu normalisé: {normalize_answer(q.resultat_attendu)}",
-                    )
+                    question_label = f"Q{q.numero} - {q.enonce or 'Sans énoncé'}"
+                    choices = parse_possible_answers(q.reponses_possibles)
+                    expected_multi = "," in normalize_answer(q.resultat_attendu)
+                    current_value = existing_answers.get(q.id) or ""
+                    if choices and expected_multi:
+                        default_multi = [x.strip() for x in current_value.split(",") if x.strip()]
+                        selected_multi = st.multiselect(
+                            question_label,
+                            options=choices,
+                            default=[x for x in default_multi if x in choices],
+                            key=f"edit_ans_{edit_attempt.id}_{q.id}",
+                            help=f"Attendu normalisé: {normalize_answer(q.resultat_attendu)}",
+                        )
+                        edited_answers[q.id] = ",".join(selected_multi)
+                    elif choices:
+                        options = [""] + choices
+                        idx = options.index(current_value) if current_value in options else 0
+                        selected_one = st.selectbox(
+                            question_label,
+                            options=options,
+                            index=idx,
+                            key=f"edit_ans_{edit_attempt.id}_{q.id}",
+                            help=f"Attendu normalisé: {normalize_answer(q.resultat_attendu)}",
+                        )
+                        edited_answers[q.id] = selected_one or None
+                    else:
+                        edited_answers[q.id] = st.text_input(
+                            question_label,
+                            value=current_value,
+                            key=f"edit_ans_{edit_attempt.id}_{q.id}",
+                            help=f"Attendu normalisé: {normalize_answer(q.resultat_attendu)}",
+                        )
                 save_edit = st.form_submit_button("Enregistrer modifications", type="primary")
                 cancel_edit = st.form_submit_button("Annuler")
 
@@ -750,11 +784,31 @@ def page_qcm_passages() -> None:
                         if chapter_label != current_chapter:
                             st.markdown(f"**Chapitre : {chapter_label}**")
                             current_chapter = chapter_label
-                        answers[q.id] = st.text_input(
-                            f"Q{q.numero} - {q.enonce or 'Sans énoncé'}",
-                            key=f"ans_{attempt_id}_{q.id}",
-                            help=f"Attendu normalisé: {normalize_answer(q.resultat_attendu)}",
-                        )
+                        question_label = f"Q{q.numero} - {q.enonce or 'Sans énoncé'}"
+                        choices = parse_possible_answers(q.reponses_possibles)
+                        expected_multi = "," in normalize_answer(q.resultat_attendu)
+                        if choices and expected_multi:
+                            selected_multi = st.multiselect(
+                                question_label,
+                                options=choices,
+                                key=f"ans_{attempt_id}_{q.id}",
+                                help=f"Attendu normalisé: {normalize_answer(q.resultat_attendu)}",
+                            )
+                            answers[q.id] = ",".join(selected_multi)
+                        elif choices:
+                            selected_one = st.selectbox(
+                                question_label,
+                                options=[""] + choices,
+                                key=f"ans_{attempt_id}_{q.id}",
+                                help=f"Attendu normalisé: {normalize_answer(q.resultat_attendu)}",
+                            )
+                            answers[q.id] = selected_one or None
+                        else:
+                            answers[q.id] = st.text_input(
+                                question_label,
+                                key=f"ans_{attempt_id}_{q.id}",
+                                help=f"Attendu normalisé: {normalize_answer(q.resultat_attendu)}",
+                            )
                     submit_btn = st.form_submit_button("Corriger et enregistrer", type="primary")
                     cancel_btn = st.form_submit_button("Annuler")
                 if cancel_btn:

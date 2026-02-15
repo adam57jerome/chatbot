@@ -88,6 +88,9 @@ def _ensure_qcm_questions_hierarchy_columns() -> None:
         if "sous_chapitre" not in cols:
             conn.exec_driver_sql("ALTER TABLE qcm_questions ADD COLUMN sous_chapitre VARCHAR(120)")
 
+        if "reponses_possibles" not in cols:
+            conn.exec_driver_sql("ALTER TABLE qcm_questions ADD COLUMN reponses_possibles TEXT")
+
         conn.exec_driver_sql("UPDATE qcm_questions SET chapitre='Général' WHERE chapitre IS NULL OR trim(chapitre) = ''")
 
 
