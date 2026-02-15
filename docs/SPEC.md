@@ -43,6 +43,7 @@ Application locale (Streamlit + FastAPI + SQLAlchemy + SQLite) pour gérer des s
 - Import CSV de questionnaire(s) multi-lignes avec création automatique des questionnaires (`questionnaire;numero;resultat_attendu;chapitre;sous_chapitre;enonce;reponses_possibles;points`).
 - Export CSV des questions d'un questionnaire (`questionnaire;numero;resultat_attendu;chapitre;sous_chapitre;enonce;reponses_possibles;points`).
 - Export **questionnaire papier (.html)** avec cases à cocher pour passation manuelle (impression crayon/papier).
+- Export **feuille scan optimisée (.html)** (A4, repères visuels, cases plus contrastées) pour faciliter OCR/ChatGPT -> CSV.
 - Édition de question: navigation combinée **liste déroulante + boutons Précédent/Suivant**.
 - Ordre d'import conservé pour l'affichage des questions (pas de tri alphabétique forcé).
 - Passages et correction automatique.

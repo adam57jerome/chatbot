@@ -55,7 +55,7 @@ from app.schemas import (
     StagiaireUpdate,
 )
 from app.utils.json_safe import find_first_non_serializable_path, to_jsonable
-from app.utils.paper_export import build_questionnaire_paper_html
+from app.utils.paper_export import build_questionnaire_paper_html, build_questionnaire_scan_html
 from ui.layout import inject_app_css, render_header, toast
 
 st.set_page_config(page_title="Gestion Stagiaires", layout="wide")
@@ -656,13 +656,23 @@ def page_qcm_questionnaires() -> None:
                 for q in questions
             ]
             paper_html = build_questionnaire_paper_html(selected.titre, paper_rows)
-            st.download_button(
+            scan_html = build_questionnaire_scan_html(selected.titre, paper_rows)
+            dcol1, dcol2 = st.columns(2)
+            dcol1.download_button(
                 "Télécharger questionnaire papier (.html)",
                 data=paper_html.encode("utf-8"),
                 file_name=f"questionnaire_papier_{selected.id}.html",
                 mime="text/html",
                 key=f"download_questions_paper_{selected.id}",
                 help="Ouvrez le fichier dans un navigateur puis imprimez-le pour un passage crayon/papier.",
+            )
+            dcol2.download_button(
+                "Télécharger feuille scan optimisée (.html)",
+                data=scan_html.encode("utf-8"),
+                file_name=f"questionnaire_scan_{selected.id}.html",
+                mime="text/html",
+                key=f"download_questions_scan_{selected.id}",
+                help="Mise en page A4 avec repères et cases pour faciliter le scan puis l'extraction CSV.",
             )
 
             st.markdown("#### Import rapide des questions")

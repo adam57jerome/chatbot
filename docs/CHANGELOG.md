@@ -4,6 +4,7 @@
 ### Module QCM / Synthèse / Export
 - QCM Questionnaire: correction de la navigation d’édition pour supporter **à la fois** la sélection via liste déroulante et les boutons **Précédent/Suivant** sans conflit d’état Streamlit.
 - QCM Questionnaire: ajout d’un export **questionnaire papier (.html)** prêt à imprimer, avec cases à cocher pour passation manuelle.
+- QCM Questionnaire: ajout d'une **feuille scan optimisée (.html)** (A4 + repères + cases contrastées) pour améliorer la fiabilité de conversion scan vers CSV.
 - Synthèse stagiaire: ergonomie améliorée avec accordéons et visualisation centrée sur les radars (chapitres + sous-chapitres filtrables).
 
 ## 2026-02-14
