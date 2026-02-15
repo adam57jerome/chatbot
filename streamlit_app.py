@@ -8,7 +8,6 @@ from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import Callable, TypeVar
 
-import matplotlib.pyplot as plt
 import pandas as pd
 import streamlit as st
 from pydantic import ValidationError
@@ -36,7 +35,6 @@ from app.qcm_service import (
     delete_attempt,
     get_attempt_answers_map,
     get_attempt_detail,
-    aggregate_scores_by_subchapter,
     get_trainee_qcm_summary,
     list_attempts,
     list_questionnaires,
@@ -936,107 +934,96 @@ def page_synthese_stagiaire() -> None:
         c6.metric("Pire note", stats["worst_note"])
         c7.metric("Dernière tentative", str(stats["last_attempt_date"]).split(".")[0] if stats["last_attempt_date"] else "-")
 
-        # Charts
-        chart_left, chart_right = st.columns(2)
-        with chart_left:
-            ci = summary["correct_incorrect"]
-            fig1, ax1 = plt.subplots()
-            ax1.pie([ci["correct"], ci["incorrect"]], labels=["Correctes", "Incorrectes"], autopct="%1.1f%%", startangle=90)
-            ax1.set_title("Réponses correctes vs incorrectes")
-            st.pyplot(fig1)
+        with st.expander("📌 Vue d'ensemble", expanded=True):
+            st.markdown("#### Top 3 / Bottom 3 questionnaires")
+            tcol, bcol = st.columns(2)
+            tcol.dataframe(summary["top3"], use_container_width=True, hide_index=True)
+            bcol.dataframe(summary["bottom3"], use_container_width=True, hide_index=True)
 
-        with chart_right:
-            attempts_chrono = list(reversed(summary["attempts"]))
-            labels = [a.date_passage.strftime("%d/%m") for a in attempts_chrono]
-            notes = [a.note_sur_20 for a in attempts_chrono]
-            fig2, ax2 = plt.subplots()
-            ax2.bar(labels, notes, color="#3b82f6")
-            ax2.set_ylim(0, 20)
-            ax2.set_title("Note /20 par tentative")
-            ax2.set_xlabel("Date")
-            ax2.set_ylabel("Note")
-            st.pyplot(fig2)
+        with st.expander("🕸️ Radars par chapitre et sous-chapitre", expanded=True):
+            chapter_scores = {
+                row["chapitre"]: round((row["taux"] / 100) * 20, 1)
+                for row in summary.get("by_chapter", [])
+            }
+            if not chapter_scores:
+                st.info("Aucune donnée de chapitre disponible pour le radar.")
+            else:
+                radar_chapter = build_radar_figure(
+                    chapter_scores,
+                    f"Radar chapitres - {trainee.nom} {trainee.prenom}",
+                    max_score=20,
+                    tick_step=2,
+                )
+                st.plotly_chart(radar_chapter, use_container_width=True)
 
-        st.markdown("#### Top 3 / Bottom 3 questionnaires")
-        tcol, bcol = st.columns(2)
-        tcol.dataframe(summary["top3"], use_container_width=True, hide_index=True)
-        bcol.dataframe(summary["bottom3"], use_container_width=True, hide_index=True)
-
-        st.markdown("#### Performance par chapitre")
-        by_chapter = summary.get("by_chapter", [])
-        if by_chapter:
-            chap_labels = [x["chapitre"] for x in by_chapter]
-            chap_rates = [x["taux"] for x in by_chapter]
-            fig3, ax3 = plt.subplots()
-            ax3.bar(chap_labels, chap_rates, color="#10b981")
-            ax3.set_ylim(0, 100)
-            ax3.set_ylabel("Taux de réussite (%)")
-            ax3.set_title("Réussite par chapitre")
-            plt.xticks(rotation=20, ha="right")
-            st.pyplot(fig3)
-
-            selected_chapter = st.selectbox("Chapitre (drill-down sous-chapitres)", chap_labels, key=f"summary_chapter_{trainee_id}")
-            by_subchapter = aggregate_scores_by_subchapter(db, trainee_id, selected_chapter)
-            sub_labels = [x["sous_chapitre"] for x in by_subchapter]
-            sub_rates = [x["taux"] for x in by_subchapter]
-            fig4, ax4 = plt.subplots()
-            ax4.bar(sub_labels, sub_rates, color="#f59e0b")
-            ax4.set_ylim(0, 100)
-            ax4.set_ylabel("Taux de réussite (%)")
-            ax4.set_title(f"Réussite par sous-chapitre — {selected_chapter}")
-            plt.xticks(rotation=20, ha="right")
-            st.pyplot(fig4)
-
-            st.markdown("#### Tableau récapitulatif chapitre / sous-chapitre")
-            st.dataframe(summary.get("by_subchapter", []), use_container_width=True, hide_index=True)
-
-        st.markdown("#### Radar compétences (/20)")
-        chapter_scores = {
-            row["chapitre"]: round((row["taux"] / 100) * 20, 1)
-            for row in summary.get("by_chapter", [])
-        }
-        if not chapter_scores:
-            st.info("Aucune donnée de chapitre disponible pour le radar.")
-        else:
-            radar = build_radar_figure(chapter_scores, f"Profil compétences - {trainee.nom} {trainee.prenom}", max_score=20, tick_step=2)
-            st.plotly_chart(radar, use_container_width=True)
-
-            col_png, col_html = st.columns(2)
-            if col_png.button("Télécharger radar.png", key=f"radar_png_{trainee_id}"):
-                try:
-                    png_bytes = radar.to_image(format="png", width=1000, height=700, scale=2)
-                    st.download_button(
-                        "Confirmer téléchargement PNG",
-                        data=png_bytes,
-                        file_name=f"radar_{trainee_id}.png",
-                        mime="image/png",
-                        key=f"dl_radar_png_{trainee_id}",
-                    )
-                except Exception:
-                    st.warning("Export PNG indisponible (installer kaleido). Utilisez l'export HTML.")
-
-            html_content = radar.to_html(full_html=True, include_plotlyjs="cdn")
-            col_html.download_button(
-                "Télécharger radar.html",
-                data=html_content,
-                file_name=f"radar_{trainee_id}.html",
-                mime="text/html",
-                key=f"dl_radar_html_{trainee_id}",
-            )
-
-        st.markdown("#### Historique des tentatives")
-        recap_rows = []
-        for a in summary["attempts"]:
-            recap_rows.append(
-                {
-                    "Date passage": a.date_passage,
-                    "Questionnaire": a.questionnaire.titre,
-                    "Score brut": f"{a.score_brut}/{a.total_questions}",
-                    "Note /20": a.note_sur_20,
-                    "Détail": f"attempt_id={a.id}",
+            st.markdown("#### Radar sous-chapitres")
+            by_subchapter = summary.get("by_subchapter", [])
+            if by_subchapter:
+                chapter_options = ["Tous"] + sorted({row["chapitre"] for row in by_subchapter})
+                selected_chapter = st.selectbox(
+                    "Filtrer le radar sous-chapitres",
+                    chapter_options,
+                    key=f"summary_subchapter_chapter_{trainee_id}",
+                )
+                scoped_rows = (
+                    by_subchapter
+                    if selected_chapter == "Tous"
+                    else [row for row in by_subchapter if row["chapitre"] == selected_chapter]
+                )
+                subchapter_scores = {
+                    f"{row['chapitre']} / {row['sous_chapitre']}": round((row["taux"] / 100) * 20, 1)
+                    for row in scoped_rows
                 }
-            )
-        st.dataframe(recap_rows, use_container_width=True, hide_index=True)
+                radar_subchapter = build_radar_figure(
+                    subchapter_scores,
+                    f"Radar sous-chapitres - {trainee.nom} {trainee.prenom}",
+                    max_score=20,
+                    tick_step=2,
+                )
+                st.plotly_chart(radar_subchapter, use_container_width=True)
+
+                st.markdown("#### Tableau récapitulatif chapitre / sous-chapitre")
+                st.dataframe(scoped_rows, use_container_width=True, hide_index=True)
+            else:
+                st.info("Aucune donnée de sous-chapitre disponible pour le radar.")
+
+            if chapter_scores:
+                col_png, col_html = st.columns(2)
+                if col_png.button("Télécharger radar chapitres.png", key=f"radar_chapter_png_{trainee_id}"):
+                    try:
+                        png_bytes = radar_chapter.to_image(format="png", width=1000, height=700, scale=2)
+                        st.download_button(
+                            "Confirmer téléchargement PNG",
+                            data=png_bytes,
+                            file_name=f"radar_chapitres_{trainee_id}.png",
+                            mime="image/png",
+                            key=f"dl_radar_chapter_png_{trainee_id}",
+                        )
+                    except Exception:
+                        st.warning("Export PNG indisponible (installer kaleido). Utilisez l'export HTML.")
+
+                html_content = radar_chapter.to_html(full_html=True, include_plotlyjs="cdn")
+                col_html.download_button(
+                    "Télécharger radar chapitres.html",
+                    data=html_content,
+                    file_name=f"radar_chapitres_{trainee_id}.html",
+                    mime="text/html",
+                    key=f"dl_radar_chapter_html_{trainee_id}",
+                )
+
+        with st.expander("🕘 Historique des tentatives", expanded=False):
+            recap_rows = []
+            for a in summary["attempts"]:
+                recap_rows.append(
+                    {
+                        "Date passage": a.date_passage,
+                        "Questionnaire": a.questionnaire.titre,
+                        "Score brut": f"{a.score_brut}/{a.total_questions}",
+                        "Note /20": a.note_sur_20,
+                        "Détail": f"attempt_id={a.id}",
+                    }
+                )
+            st.dataframe(recap_rows, use_container_width=True, hide_index=True)
 
         # ChatGPT block
         payload = {
