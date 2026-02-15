@@ -74,6 +74,8 @@ for key, value in {
     "qcm_questionnaire_id": None,
     "qcm_attempt_id": None,
     "qcm_edit_attempt_id": None,
+    "edit_question_id": None,
+    "edit_question_questionnaire_id": None,
 }.items():
     st.session_state.setdefault(key, value)
 
@@ -545,15 +547,32 @@ def page_qcm_questionnaires() -> None:
             if questions:
                 st.markdown("#### Modifier une question")
                 question_ids = [q.id for q in questions]
-                editable_question_id = st.selectbox(
+
+                # Règle Streamlit: ne pas modifier la clé du widget après instanciation.
+                # On pilote la navigation avec edit_question_id (état métier), puis on synchronise
+                # la clé fixe du widget AVANT de créer le selectbox.
+                if (
+                    st.session_state.edit_question_questionnaire_id != selected_id
+                    or st.session_state.edit_question_id not in question_ids
+                ):
+                    st.session_state.edit_question_questionnaire_id = selected_id
+                    st.session_state.edit_question_id = question_ids[0]
+
+                if st.session_state.get("edit_question_select") != st.session_state.edit_question_id:
+                    st.session_state["edit_question_select"] = st.session_state.edit_question_id
+
+                selected_question_id = st.selectbox(
                     "Question à modifier",
                     question_ids,
                     format_func=lambda qid: next(
                         f"[{q.chapitre} / {q.sous_chapitre or 'Sans sous-chapitre'}] Q{q.numero} - {q.enonce or '-'}"
                         for q in questions if q.id == qid
                     ),
-                    key=f"edit_question_select_{selected_id}",
+                    key="edit_question_select",
                 )
+                st.session_state.edit_question_id = selected_question_id
+
+                editable_question_id = st.session_state.edit_question_id
                 editable_question = next(q for q in questions if q.id == editable_question_id)
                 with st.form(f"edit_question_{editable_question_id}"):
                     ec1, ec2 = st.columns(2)
@@ -586,17 +605,21 @@ def page_qcm_questionnaires() -> None:
                         st.rerun()
                 if delete_q:
                     delete_question(db, editable_question_id)
+                    remaining_ids = [qid for qid in question_ids if qid != editable_question_id]
+                    st.session_state.edit_question_id = remaining_ids[0] if remaining_ids else None
                     toast("success", "Question supprimée")
                     st.rerun()
 
                 nav_left, nav_right = st.columns(2)
                 current_idx = question_ids.index(editable_question_id)
-                if nav_left.button("⬅️ Question précédente", key=f"prev_question_{selected_id}", disabled=current_idx == 0):
-                    st.session_state[f"edit_question_select_{selected_id}"] = question_ids[current_idx - 1]
+                if nav_left.button("⬅️ Question précédente", key="prev_question", disabled=current_idx == 0):
+                    st.session_state.edit_question_id = question_ids[current_idx - 1]
                     st.rerun()
-                if nav_right.button("Question suivante ➡️", key=f"next_question_{selected_id}", disabled=current_idx == len(question_ids) - 1):
-                    st.session_state[f"edit_question_select_{selected_id}"] = question_ids[current_idx + 1]
+                if nav_right.button("Question suivante ➡️", key="next_question", disabled=current_idx == len(question_ids) - 1):
+                    st.session_state.edit_question_id = question_ids[current_idx + 1]
                     st.rerun()
+            else:
+                st.info("Aucune question disponible pour l'édition.")
 
             st.markdown("#### Export des questions (.csv)")
             export_rows = [
