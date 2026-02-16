@@ -722,20 +722,28 @@ def page_qcm_questionnaires() -> None:
                 if save_q:
                     if not e_chapitre.strip():
                         st.error("Le chapitre est obligatoire.")
+                    elif not eattendu.strip():
+                        st.error("Le résultat attendu est obligatoire.")
                     else:
-                        update_question(
-                            db,
-                            editable_question_id,
-                            int(enumero),
-                            eattendu,
-                            eenonce,
-                            int(epoints),
-                            e_chapitre,
-                            e_sous,
-                            [line.strip() for line in e_possible.splitlines() if line.strip()],
-                        )
-                        toast("success", "Question mise à jour")
-                        st.rerun()
+                        try:
+                            updated_question = update_question(
+                                db,
+                                editable_question_id,
+                                int(enumero),
+                                eattendu,
+                                eenonce,
+                                int(epoints),
+                                e_chapitre,
+                                e_sous,
+                                [line.strip() for line in e_possible.splitlines() if line.strip()],
+                            )
+                            if not updated_question:
+                                st.warning("Question introuvable, impossible de sauvegarder.")
+                            else:
+                                toast("success", "Question mise à jour")
+                                st.rerun()
+                        except ValueError as exc:
+                            st.error(str(exc))
                 if delete_q:
                     delete_question(db, editable_question_id)
                     remaining_ids = [qid for qid in question_ids if qid != editable_question_id]
@@ -1280,20 +1288,34 @@ def page_help() -> None:
 - Synthèse
 - Import CSV
 - Sauvegarde / BDD""")
-        for k, title in [
-            ("overview", "Vue d'ensemble"),
-            ("stagiaires", "Stagiaires"),
-            ("sections", "Sections"),
-            ("formations", "Formations"),
-            ("import_csv", "Import CSV"),
-            ("database", "Sauvegarde / Base de données"),
-        ]:
-            with st.expander(title):
-                st.write(AIDE_SECTIONS[k])
-                if k == "import_csv":
+        section_order = [
+            "overview",
+            "stagiaires",
+            "sections",
+            "formations",
+            "qcm",
+            "synthese",
+            "import_csv",
+            "database",
+        ]
+        section_titles = {
+            "overview": "Vue d'ensemble",
+            "stagiaires": "Stagiaires",
+            "sections": "Sections",
+            "formations": "Formations",
+            "qcm": "QCM",
+            "synthese": "Synthèse stagiaire",
+            "import_csv": "Import CSV",
+            "database": "Sauvegarde / Base de données",
+        }
+        for key in section_order:
+            content = AIDE_SECTIONS.get(key)
+            if not content:
+                continue
+            with st.expander(section_titles[key]):
+                st.write(content)
+                if key == "import_csv":
                     st.code(CSV_EXAMPLE, language="csv")
-        with st.expander("Synthèse stagiaire"):
-            st.write("Affiche indicateurs QCM, graphiques, historique et bloc ChatGPT prêt à copier-coller.")
 
     with st.expander("📌 Cahier des charges", expanded=False):
         spec_path = Path("docs/SPEC.md")

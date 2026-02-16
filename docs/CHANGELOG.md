@@ -1,5 +1,10 @@
 # Historique des modifications
 
+## 2026-02-19
+### Module UI/UX (correctifs)
+- Correction de la sauvegarde d'édition de question QCM: validation du résultat attendu + gestion d'erreur explicite en cas d'échec de mise à jour.
+- Correction de la page Aide: restauration d'un affichage exhaustif des rubriques (incluant QCM et Synthèse) avec ordre de rendu stable.
+
 ## 2026-02-18
 ### Module UI/UX (itération 3)
 - Ajout d'un **profil UI par rôle** (Admin/Formateur) avec presets d'affichage automatiques depuis Préférences.

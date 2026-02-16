@@ -16,6 +16,8 @@ AIDE_SECTIONS = {
     "stagiaires": "Créer, modifier, supprimer, rechercher, et affecter un stagiaire à une section + formation souhaitée.",
     "sections": "Créer/modifier les sections, puis ajouter/retirer des stagiaires depuis l'écran section.",
     "formations": "Créer/modifier les formations et les associer comme souhaitées pour les stagiaires.",
+    "qcm": "Créer des questionnaires, gérer les questions (chapitre/sous-chapitre), lancer des passages et corriger.",
+    "synthese": "Consulter les KPI, radars et historiques pour analyser les résultats des stagiaires.",
     "import_csv": "Importer en masse des stagiaires avec prévisualisation, mapping des colonnes, validation et rapport.",
     "database": "Base SQLite locale (data/app.db). Les migrations Alembic appliquent les changements de schéma.",
 }

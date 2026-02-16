@@ -90,6 +90,7 @@ Application locale (Streamlit + FastAPI + SQLAlchemy + SQLite) pour gérer des s
 - Pages Gestion/QCM: assistant de page (3 étapes) + badges KPI rapides.
 - Pages longues: barre d'actions contextuelle en tête (Créer / actions principales).
 - Import CSV et Aide uniformisés avec accordéons + assistant + KPI légers.
+- Aide: affichage exhaustif des rubriques (incluant QCM et Synthèse) selon un ordre stable.
 - Synthèse stagiaire: sélection stagiaire, KPI, accordéons, radars chapitre/sous-chapitre, tableau d’analyse.
 
 ## 8) Exigences non fonctionnelles
