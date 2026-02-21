@@ -194,6 +194,7 @@ Le module QCM ajoute :
 - export du détail d'un passage en **HTML imprimable** (génération PDF via navigateur)
 - export natif **PDF** (bouton direct)
 - envoi optionnel du PDF par email (SMTP)
+- compatibilité Streamlit: pas d'expanders imbriqués dans l'historique QCM
 - score brut + conversion **note sur 20** (arrondie à 1 décimale)
 
 ### Calcul de note

@@ -1069,101 +1069,104 @@ def page_qcm_passages() -> None:
                 st.markdown("#### Détail / Modifier / Supprimer un passage")
                 for a in attempts:
                     total_possible = get_attempt_total_possible_points(db, a.id)
-                    with st.expander(
-                        f"#{a.id} — {a.stagiaire.nom} {a.stagiaire.prenom} — {a.questionnaire.titre} — {a.score_brut}/{total_possible} pts — {a.note_sur_20}/20",
-                        expanded=False,
-                    ):
-                        review_rows = get_attempt_review_rows(db, a.id)
-                        only_errors = st.checkbox("Voir uniquement erreurs", key=f"attempt_only_errors_{a.id}")
-                        rows_to_show = [r for r in review_rows if not r["correct"]] if only_errors else review_rows
+                    st.markdown(
+                        f"**#{a.id} — {a.stagiaire.nom} {a.stagiaire.prenom} — {a.questionnaire.titre} — {a.score_brut}/{total_possible} pts — {a.note_sur_20}/20**"
+                    )
+                    review_rows = get_attempt_review_rows(db, a.id)
+                    only_errors = st.checkbox("Voir uniquement erreurs", key=f"attempt_only_errors_{a.id}")
+                    rows_to_show = [r for r in review_rows if not r["correct"]] if only_errors else review_rows
 
-                        st.dataframe(
-                            [
-                                {
-                                    "Q": r["numero"],
-                                    "Chapitre": r["chapitre"],
-                                    "Énoncé": r["enonce"] or "-",
-                                    "Attendu": r["attendu"] or "-",
-                                    "Réponse stagiaire": r["reponse_stagiaire"] or "-",
-                                    "Résultat": "OK" if r["correct"] else "KO",
-                                    "Points": f"{r['points_obtenus']}/{r['points_max']}",
-                                }
-                                for r in rows_to_show
-                            ],
-                            use_container_width=True,
-                            hide_index=True,
-                        )
+                    st.dataframe(
+                        [
+                            {
+                                "Q": r["numero"],
+                                "Chapitre": r["chapitre"],
+                                "Énoncé": r["enonce"] or "-",
+                                "Attendu": r["attendu"] or "-",
+                                "Réponse stagiaire": r["reponse_stagiaire"] or "-",
+                                "Résultat": "OK" if r["correct"] else "KO",
+                                "Points": f"{r['points_obtenus']}/{r['points_max']}",
+                            }
+                            for r in rows_to_show
+                        ],
+                        use_container_width=True,
+                        hide_index=True,
+                    )
 
-                        html_report = build_attempt_review_html(
-                            attempt_id=a.id,
-                            trainee_name=f"{a.stagiaire.nom} {a.stagiaire.prenom}",
-                            questionnaire_title=a.questionnaire.titre,
-                            note_sur_20=float(a.note_sur_20 or 0),
-                            score_brut=int(a.score_brut or 0),
-                            total_possible_points=total_possible,
-                            rows=rows_to_show,
-                        )
-                        st.download_button(
-                            "📄 Exporter résultat (HTML imprimable / PDF)",
-                            data=html_report,
-                            file_name=f"resultat_qcm_attempt_{a.id}.html",
-                            mime="text/html",
-                            key=f"export_attempt_html_{a.id}",
-                            help="Ouvrez ce fichier dans le navigateur puis Imprimer > Enregistrer en PDF.",
-                        )
-                        pdf_bytes = build_attempt_review_pdf_bytes(
-                            attempt_id=a.id,
-                            trainee_name=f"{a.stagiaire.nom} {a.stagiaire.prenom}",
-                            questionnaire_title=a.questionnaire.titre,
-                            note_sur_20=float(a.note_sur_20 or 0),
-                            score_brut=int(a.score_brut or 0),
-                            total_possible_points=total_possible,
-                            rows=rows_to_show,
-                        )
-                        st.download_button(
-                            "🧾 Télécharger PDF",
-                            data=pdf_bytes,
-                            file_name=f"resultat_qcm_attempt_{a.id}.pdf",
-                            mime="application/pdf",
-                            key=f"export_attempt_pdf_{a.id}",
-                        )
+                    html_report = build_attempt_review_html(
+                        attempt_id=a.id,
+                        trainee_name=f"{a.stagiaire.nom} {a.stagiaire.prenom}",
+                        questionnaire_title=a.questionnaire.titre,
+                        note_sur_20=float(a.note_sur_20 or 0),
+                        score_brut=int(a.score_brut or 0),
+                        total_possible_points=total_possible,
+                        rows=rows_to_show,
+                    )
+                    pdf_bytes = build_attempt_review_pdf_bytes(
+                        attempt_id=a.id,
+                        trainee_name=f"{a.stagiaire.nom} {a.stagiaire.prenom}",
+                        questionnaire_title=a.questionnaire.titre,
+                        note_sur_20=float(a.note_sur_20 or 0),
+                        score_brut=int(a.score_brut or 0),
+                        total_possible_points=total_possible,
+                        rows=rows_to_show,
+                    )
 
-                        trainee_email = (a.stagiaire.email or "").strip()
-                        if trainee_email:
-                            email_enabled = is_email_enabled()
-                            if email_enabled:
-                                if st.button("📧 Envoyer le PDF par email", key=f"email_attempt_{a.id}"):
-                                    try:
-                                        send_qcm_result_email(
-                                            to_email=trainee_email,
-                                            subject=f"Résultat QCM - {a.questionnaire.titre}",
-                                            body_text=(
-                                                f"Bonjour {a.stagiaire.prenom},\n\n"
-                                                f"Vous trouverez en pièce jointe votre résultat QCM (tentative #{a.id}).\n"
-                                                f"Note: {a.note_sur_20}/20.\n"
-                                            ),
-                                            pdf_bytes=pdf_bytes,
-                                            filename=f"resultat_qcm_attempt_{a.id}.pdf",
-                                        )
-                                        toast("success", f"Email envoyé à {trainee_email}")
-                                    except Exception as exc:
-                                        st.error(f"Échec envoi email: {exc}")
-                            else:
-                                st.caption("Configurer SMTP_HOST et SMTP_FROM (optionnel) pour activer l'envoi email.")
+                    e1, e2 = st.columns(2)
+                    e1.download_button(
+                        "📄 Exporter résultat (HTML imprimable / PDF)",
+                        data=html_report,
+                        file_name=f"resultat_qcm_attempt_{a.id}.html",
+                        mime="text/html",
+                        key=f"export_attempt_html_{a.id}",
+                        help="Ouvrez ce fichier dans le navigateur puis Imprimer > Enregistrer en PDF.",
+                    )
+                    e2.download_button(
+                        "🧾 Télécharger PDF",
+                        data=pdf_bytes,
+                        file_name=f"resultat_qcm_attempt_{a.id}.pdf",
+                        mime="application/pdf",
+                        key=f"export_attempt_pdf_{a.id}",
+                    )
 
-                        c1, c2 = st.columns(2)
-                        if c1.button("✏️ Modifier", key=f"edit_attempt_{a.id}", help="Modifier cette tentative"):
-                            st.session_state.qcm_edit_attempt_id = a.id
+                    trainee_email = (a.stagiaire.email or "").strip()
+                    if trainee_email:
+                        email_enabled = is_email_enabled()
+                        if email_enabled:
+                            if st.button("📧 Envoyer le PDF par email", key=f"email_attempt_{a.id}"):
+                                try:
+                                    send_qcm_result_email(
+                                        to_email=trainee_email,
+                                        subject=f"Résultat QCM - {a.questionnaire.titre}",
+                                        body_text=(
+                                            f"Bonjour {a.stagiaire.prenom},\n\n"
+                                            f"Vous trouverez en pièce jointe votre résultat QCM (tentative #{a.id}).\n"
+                                            f"Note: {a.note_sur_20}/20.\n"
+                                        ),
+                                        pdf_bytes=pdf_bytes,
+                                        filename=f"resultat_qcm_attempt_{a.id}.pdf",
+                                    )
+                                    toast("success", f"Email envoyé à {trainee_email}")
+                                except Exception as exc:
+                                    st.error(f"Échec envoi email: {exc}")
+                        else:
+                            st.caption("Configurer SMTP_HOST et SMTP_FROM (optionnel) pour activer l'envoi email.")
+
+                    c1, c2 = st.columns(2)
+                    if c1.button("✏️ Modifier", key=f"edit_attempt_{a.id}", help="Modifier cette tentative"):
+                        st.session_state.qcm_edit_attempt_id = a.id
+                        st.session_state.qcm_attempt_id = None
+                        st.rerun()
+                    if c2.button("🗑️ Supprimer", key=f"delete_attempt_{a.id}", help="Supprimer cette tentative"):
+                        delete_attempt(db, a.id)
+                        if st.session_state.qcm_edit_attempt_id == a.id:
+                            st.session_state.qcm_edit_attempt_id = None
+                        if st.session_state.qcm_attempt_id == a.id:
                             st.session_state.qcm_attempt_id = None
-                            st.rerun()
-                        if c2.button("🗑️ Supprimer", key=f"delete_attempt_{a.id}", help="Supprimer cette tentative"):
-                            delete_attempt(db, a.id)
-                            if st.session_state.qcm_edit_attempt_id == a.id:
-                                st.session_state.qcm_edit_attempt_id = None
-                            if st.session_state.qcm_attempt_id == a.id:
-                                st.session_state.qcm_attempt_id = None
-                            toast("success", "Passage supprimé")
-                            st.rerun()
+                        toast("success", "Passage supprimé")
+                        st.rerun()
+
+                    st.divider()
 
 
 def page_synthese_stagiaire() -> None:
