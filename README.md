@@ -194,7 +194,7 @@ Le module QCM ajoute :
 ### Calcul de note
 - 1 point si réponse stagiaire normalisée == résultat attendu normalisé
 - 0 sinon
-- `note_sur_20 = (score_brut / total_questions) * 20`
+- `note_sur_20 = (score_brut / total_points_possibles) * 20`
 - si `total_questions == 0`, alors note = `0`
 
 ### Commandes
@@ -227,4 +227,29 @@ Utilisation:
 Toute nouvelle fonctionnalité doit mettre à jour :
 - `docs/SPEC.md` (cahier des charges)
 - `docs/CHANGELOG.md` (entrée datée des changements)
+
+
+## Authentification (FastAPI + Streamlit)
+
+L'auth est **optionnelle**: si les variables d'environnement ne sont pas définies, l'application reste ouverte (mode local dev).
+
+Variables supportées :
+- `APP_SECRET_KEY` : secret de session FastAPI (obligatoire en production)
+- `APP_ADMIN_USER` : nom d'utilisateur admin
+- `APP_ADMIN_PASSWORD_HASH` : hash du mot de passe (prioritaire)
+- `APP_ADMIN_PASSWORD` : fallback local dev uniquement (à éviter en production)
+
+Exemple PowerShell :
+```powershell
+$env:APP_SECRET_KEY = "change-me-super-secret"
+$env:APP_ADMIN_USER = "admin"
+$env:APP_ADMIN_PASSWORD = "admin123"   # fallback dev
+
+uvicorn app.main:app --reload --port 8001
+streamlit run streamlit_app.py --server.port 8501
+```
+
+Comportement :
+- FastAPI : page `/login` + session + `/logout`.
+- Streamlit : formulaire de connexion au démarrage + bouton de déconnexion en sidebar.
 

@@ -16,6 +16,11 @@
     <nav>
       <a href="/stagiaires">Stagiaires</a>
       <a href="/sections">Sections</a>
+          {% if request.session and request.session.get("auth_user") %}
+      <form method="post" action="/logout" style="display:inline; margin-left: 1rem;">
+        <button type="submit">Déconnexion</button>
+      </form>
+      {% endif %}
     </nav>
   </header>
 

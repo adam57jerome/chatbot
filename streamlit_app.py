@@ -15,6 +15,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError, OperationalError
 
 from app import crud
+from app.auth import is_auth_enabled, verify_credentials
 from charts.radar import build_radar_figure
 from app.db import (
     SessionLocal,
@@ -96,6 +97,7 @@ for key, value in {
     "ui_density": "Confort",
     "ui_compact_tables": False,
     "ui_role_profile": "Admin",
+    "auth_ok": False,
 }.items():
     st.session_state.setdefault(key, value)
 
@@ -1439,6 +1441,33 @@ def page_preferences() -> None:
             st.code(db, language="text")
 
 
+def ensure_streamlit_auth() -> None:
+    if not is_auth_enabled():
+        return
+
+    if st.session_state.get("auth_ok"):
+        if st.sidebar.button("🔒 Se déconnecter", key="streamlit_logout"):
+            st.session_state.auth_ok = False
+            st.rerun()
+        return
+
+    st.markdown("## 🔐 Connexion")
+    st.info("Veuillez vous authentifier pour accéder à l'application.")
+    with st.form("streamlit_login_form"):
+        username = st.text_input("Utilisateur")
+        password = st.text_input("Mot de passe", type="password")
+        submit = st.form_submit_button("Se connecter", type="primary")
+    if submit:
+        if verify_credentials(username, password):
+            st.session_state.auth_ok = True
+            toast("success", "Connexion réussie")
+            st.rerun()
+        else:
+            st.error("Identifiants invalides.")
+    st.stop()
+
+
+ensure_streamlit_auth()
 init_db()
 inject_app_css()
 

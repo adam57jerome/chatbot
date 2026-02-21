@@ -47,6 +47,7 @@ def encode_possible_answers(values: list[str] | None) -> str | None:
 
 
 def compute_note_sur_20(score_brut: int, total_questions: int) -> float:
+    """Compute /20 note from score and maximum attainable score."""
     if total_questions <= 0:
         return 0.0
     return round((score_brut / total_questions) * 20, 1)
@@ -204,7 +205,8 @@ def submit_attempt(db: Session, attempt_id: int, answers_dict: dict[int, str | N
         )
 
     total_questions = len(questions)
-    note = compute_note_sur_20(score_brut, total_questions)
+    total_possible_points = sum(max(int(q.points or 0), 0) for q in questions)
+    note = compute_note_sur_20(score_brut, total_possible_points)
     attempt.score_brut = score_brut
     attempt.total_questions = total_questions
     attempt.note_sur_20 = note

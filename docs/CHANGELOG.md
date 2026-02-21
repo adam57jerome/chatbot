@@ -1,5 +1,11 @@
 # Historique des modifications
 
+## 2026-02-21
+### Module QCM + Auth
+- Correction du calcul de note QCM: la note /20 est désormais calculée sur le **total de points possibles** (support des questions pondérées).
+- Ajout d'une authentification simple et sécurisée pour FastAPI + Streamlit (variables d'environnement, login/logout, session).
+- Ajout de tests unitaires sur les helpers d'authentification et le calcul de note pondéré.
+
 ## 2026-02-20
 ### Module Web/API (correctif middleware)
 - Correction de l'ordre des middlewares dans `app/main.py` pour garantir que `SessionMiddleware` est actif avant la lecture de la session flash.

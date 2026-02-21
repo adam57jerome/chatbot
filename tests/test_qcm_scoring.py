@@ -12,3 +12,8 @@ def test_note_sur_20_from_score_7_on_10():
 
 def test_note_sur_20_with_zero_question():
     assert compute_note_sur_20(0, 0) == 0.0
+
+
+def test_note_sur_20_weighted_points():
+    # 3 points obtenus sur 5 possibles => 12/20
+    assert compute_note_sur_20(3, 5) == 12.0
