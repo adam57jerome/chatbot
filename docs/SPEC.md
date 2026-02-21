@@ -103,6 +103,7 @@ Application locale (Streamlit + FastAPI + SQLAlchemy + SQLite) pour gérer des s
 ## 9) Contraintes techniques
 - Streamlit pour UI opérateur.
 - FastAPI pour API/serveur web.
+- SessionMiddleware prioritaire sur les middlewares applicatifs qui lisent la session (flash, etc.).
 - SQLAlchemy ORM + Alembic migrations.
 - SQLite par défaut.
 

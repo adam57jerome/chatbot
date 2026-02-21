@@ -1,5 +1,11 @@
 # Historique des modifications
 
+## 2026-02-20
+### Module Web/API (correctif middleware)
+- Correction de l'ordre des middlewares dans `app/main.py` pour garantir que `SessionMiddleware` est actif avant la lecture de la session flash.
+- Remplacement du middleware fonctionnel flash par un middleware de classe (`FlashStateMiddleware`) avec accès sûr à `request.scope["session"]`.
+- Corrige les scénarios de tests sections/stagiaires qui échouaient avec `SessionMiddleware must be installed to access request.session`.
+
 ## 2026-02-19
 ### Module UI/UX (correctifs)
 - Correction de la sauvegarde d'édition de question QCM: validation du résultat attendu + gestion d'erreur explicite en cas d'échec de mise à jour.
