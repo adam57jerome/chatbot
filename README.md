@@ -189,6 +189,8 @@ Le module QCM ajoute :
 - gestion des **questionnaires**
 - gestion des **questions QCM** avec résultat attendu
 - **passages stagiaires** avec correction automatique
+- historique des passages avec détail par question (**attendu** vs **réponse stagiaire**)
+- export du détail d'un passage en **HTML imprimable** (génération PDF via navigateur)
 - score brut + conversion **note sur 20** (arrondie à 1 décimale)
 
 ### Calcul de note

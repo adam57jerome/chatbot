@@ -36,6 +36,8 @@ from app.qcm_service import (
     delete_attempt,
     get_attempt_answers_map,
     get_attempt_detail,
+    get_attempt_review_rows,
+    get_total_possible_points_for_questionnaire,
     get_trainee_qcm_summary,
     list_attempts,
     list_questionnaires,
@@ -56,7 +58,7 @@ from app.schemas import (
     StagiaireUpdate,
 )
 from app.utils.json_safe import find_first_non_serializable_path, to_jsonable
-from app.utils.paper_export import build_questionnaire_paper_html, build_questionnaire_scan_html
+from app.utils.paper_export import build_attempt_review_html, build_questionnaire_paper_html, build_questionnaire_scan_html
 from ui.layout import (
     get_role_ui_preset,
     inject_app_css,
@@ -978,7 +980,7 @@ def page_qcm_passages() -> None:
                 if save_edit:
                     result = submit_attempt(db, edit_attempt.id, edited_answers)
                     st.session_state.qcm_edit_attempt_id = None
-                    toast("success", f"Tentative mise à jour: {result.score_brut}/{result.total_questions}, note {result.note_sur_20}/20")
+                    toast("success", f"Tentative mise à jour: {result.score_brut}/{result.total_possible_points} points, note {result.note_sur_20}/20")
                     st.rerun()
 
         attempt_id = st.session_state.qcm_attempt_id
@@ -1027,7 +1029,7 @@ def page_qcm_passages() -> None:
                         st.rerun()
                     if submit_btn:
                         result = submit_attempt(db, attempt_id, answers)
-                        toast("success", f"Corrigé: score {result.score_brut}/{result.total_questions}, note {result.note_sur_20}/20")
+                        toast("success", f"Corrigé: score {result.score_brut}/{result.total_possible_points} points, note {result.note_sur_20}/20")
                         st.rerun()
 
         with st.expander("📚 Historique des passages", expanded=True):
@@ -1048,7 +1050,7 @@ def page_qcm_passages() -> None:
                             "Date": a.date_passage,
                             "Stagiaire": f"{a.stagiaire.nom} {a.stagiaire.prenom}",
                             "Questionnaire": a.questionnaire.titre,
-                            "Score": f"{a.score_brut}/{a.total_questions}",
+                            "Score": f"{a.score_brut}/{get_total_possible_points_for_questionnaire(db, a.questionnaire_id)}",
                             "Note/20": a.note_sur_20,
                         }
                         for a in attempts
@@ -1058,22 +1060,62 @@ def page_qcm_passages() -> None:
                 )
 
             if show_actions:
-                st.markdown("#### Modifier / Supprimer un passage")
+                st.markdown("#### Détail / Modifier / Supprimer un passage")
                 for a in attempts:
-                    c1, c2, c3 = st.columns([5, 1, 1])
-                    c1.write(f"#{a.id} — {a.stagiaire.nom} {a.stagiaire.prenom} — {a.questionnaire.titre} — {a.note_sur_20}/20")
-                    if c2.button("✏️", key=f"edit_attempt_{a.id}", help="Modifier cette tentative"):
-                        st.session_state.qcm_edit_attempt_id = a.id
-                        st.session_state.qcm_attempt_id = None
-                        st.rerun()
-                    if c3.button("🗑️", key=f"delete_attempt_{a.id}", help="Supprimer cette tentative"):
-                        delete_attempt(db, a.id)
-                        if st.session_state.qcm_edit_attempt_id == a.id:
-                            st.session_state.qcm_edit_attempt_id = None
-                        if st.session_state.qcm_attempt_id == a.id:
+                    total_possible = get_total_possible_points_for_questionnaire(db, a.questionnaire_id)
+                    with st.expander(
+                        f"#{a.id} — {a.stagiaire.nom} {a.stagiaire.prenom} — {a.questionnaire.titre} — {a.score_brut}/{total_possible} pts — {a.note_sur_20}/20",
+                        expanded=False,
+                    ):
+                        review_rows = get_attempt_review_rows(db, a.id)
+                        st.dataframe(
+                            [
+                                {
+                                    "Q": r["numero"],
+                                    "Chapitre": r["chapitre"],
+                                    "Énoncé": r["enonce"] or "-",
+                                    "Attendu": r["attendu"] or "-",
+                                    "Réponse stagiaire": r["reponse_stagiaire"] or "-",
+                                    "Résultat": "OK" if r["correct"] else "KO",
+                                    "Points": f"{r['points_obtenus']}/{r['points_max']}",
+                                }
+                                for r in review_rows
+                            ],
+                            use_container_width=True,
+                            hide_index=True,
+                        )
+
+                        html_report = build_attempt_review_html(
+                            attempt_id=a.id,
+                            trainee_name=f"{a.stagiaire.nom} {a.stagiaire.prenom}",
+                            questionnaire_title=a.questionnaire.titre,
+                            note_sur_20=float(a.note_sur_20 or 0),
+                            score_brut=int(a.score_brut or 0),
+                            total_possible_points=total_possible,
+                            rows=review_rows,
+                        )
+                        st.download_button(
+                            "📄 Exporter résultat (HTML imprimable / PDF)",
+                            data=html_report,
+                            file_name=f"resultat_qcm_attempt_{a.id}.html",
+                            mime="text/html",
+                            key=f"export_attempt_html_{a.id}",
+                            help="Ouvrez ce fichier dans le navigateur puis Imprimer > Enregistrer en PDF.",
+                        )
+
+                        c1, c2 = st.columns(2)
+                        if c1.button("✏️ Modifier", key=f"edit_attempt_{a.id}", help="Modifier cette tentative"):
+                            st.session_state.qcm_edit_attempt_id = a.id
                             st.session_state.qcm_attempt_id = None
-                        toast("success", "Passage supprimé")
-                        st.rerun()
+                            st.rerun()
+                        if c2.button("🗑️ Supprimer", key=f"delete_attempt_{a.id}", help="Supprimer cette tentative"):
+                            delete_attempt(db, a.id)
+                            if st.session_state.qcm_edit_attempt_id == a.id:
+                                st.session_state.qcm_edit_attempt_id = None
+                            if st.session_state.qcm_attempt_id == a.id:
+                                st.session_state.qcm_attempt_id = None
+                            toast("success", "Passage supprimé")
+                            st.rerun()
 
 
 def page_synthese_stagiaire() -> None:

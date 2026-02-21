@@ -47,6 +47,8 @@ Application locale (Streamlit + FastAPI + SQLAlchemy + SQLite) pour gérer des s
 - Édition de question: navigation combinée **liste déroulante + boutons Précédent/Suivant**.
 - Ordre d'import conservé pour l'affichage des questions (pas de tri alphabétique forcé).
 - Passages et correction automatique.
+- Historique des passages: consultation du détail question par question (résultat attendu, réponse du stagiaire, points).
+- Export du résultat d'un passage en fichier HTML imprimable (PDF via impression navigateur).
 
 ### Synthèse
 - Indicateurs globaux, top/bottom questionnaires.

@@ -14,6 +14,7 @@ from app.models import QCMAnswer, QCMAttempt, QCMQuestion, Questionnaire
 class AttemptResult:
     score_brut: int
     total_questions: int
+    total_possible_points: int
     note_sur_20: float
 
 
@@ -212,7 +213,50 @@ def submit_attempt(db: Session, attempt_id: int, answers_dict: dict[int, str | N
     attempt.note_sur_20 = note
     db.commit()
 
-    return AttemptResult(score_brut=score_brut, total_questions=total_questions, note_sur_20=note)
+    return AttemptResult(
+        score_brut=score_brut,
+        total_questions=total_questions,
+        total_possible_points=total_possible_points,
+        note_sur_20=note,
+    )
+
+
+def get_total_possible_points_for_questionnaire(db: Session, questionnaire_id: int) -> int:
+    total = db.scalar(
+        select(func.coalesce(func.sum(func.max(QCMQuestion.points, 0)), 0)).where(
+            QCMQuestion.questionnaire_id == questionnaire_id
+        )
+    )
+    return int(total or 0)
+
+
+def get_attempt_review_rows(db: Session, attempt_id: int) -> list[dict[str, object]]:
+    rows = db.execute(
+        select(QCMQuestion, QCMAnswer)
+        .join(QCMAnswer, QCMAnswer.question_id == QCMQuestion.id)
+        .where(QCMAnswer.attempt_id == attempt_id)
+        .order_by(QCMQuestion.numero, QCMQuestion.id)
+    ).all()
+
+    details: list[dict[str, object]] = []
+    for question, answer in rows:
+        expected = question.resultat_attendu or ""
+        trainee_answer = answer.reponse_stagiaire or ""
+        details.append(
+            {
+                "question_id": question.id,
+                "numero": question.numero,
+                "chapitre": question.chapitre or "Général",
+                "sous_chapitre": question.sous_chapitre or "Sans sous-chapitre",
+                "enonce": question.enonce or "",
+                "attendu": expected,
+                "reponse_stagiaire": trainee_answer,
+                "correct": bool(answer.est_correct),
+                "points_obtenus": int(answer.point_obtenu or 0),
+                "points_max": int(question.points or 0),
+            }
+        )
+    return details
 
 
 def list_attempts(db: Session, stagiaire_id: int | None = None, questionnaire_id: int | None = None, day: date | None = None):

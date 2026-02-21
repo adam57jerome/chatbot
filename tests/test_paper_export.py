@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from app.utils.paper_export import build_questionnaire_paper_html, build_questionnaire_scan_html
+from app.utils.paper_export import build_attempt_review_html, build_questionnaire_paper_html, build_questionnaire_scan_html
 
 
 def test_build_questionnaire_paper_html_renders_checkboxes_and_metadata():
@@ -61,3 +61,33 @@ def test_build_questionnaire_scan_html_contains_markers_and_choice_codes():
     assert ">A<" in html
     assert ">B<" in html
     assert "300 dpi" in html
+
+
+def test_build_attempt_review_html_contains_expected_and_trainee_answers():
+    html = build_attempt_review_html(
+        attempt_id=42,
+        trainee_name="Jean Dupont",
+        questionnaire_title="QCM Révision",
+        note_sur_20=12.0,
+        score_brut=3,
+        total_possible_points=5,
+        rows=[
+            {
+                "numero": 1,
+                "chapitre": "Maths",
+                "enonce": "2+2=?",
+                "attendu": "4",
+                "reponse_stagiaire": "5",
+                "correct": False,
+                "points_obtenus": 0,
+                "points_max": 2,
+            }
+        ],
+    )
+
+    assert "tentative #42" in html
+    assert "Jean Dupont" in html
+    assert "Attendu" in html
+    assert "Réponse stagiaire" in html
+    assert "5" in html
+    assert "Score: 3/5 points" in html

@@ -85,6 +85,69 @@ def build_questionnaire_paper_html(questionnaire_title: str, questions: Iterable
 """
 
 
+def build_attempt_review_html(
+    *,
+    attempt_id: int,
+    trainee_name: str,
+    questionnaire_title: str,
+    note_sur_20: float,
+    score_brut: int,
+    total_possible_points: int,
+    rows: Iterable[Mapping[str, object]],
+) -> str:
+    safe_trainee = escape(trainee_name.strip() or "Stagiaire")
+    safe_title = escape(questionnaire_title.strip() or "Questionnaire")
+    table_rows: list[str] = []
+    for row in rows:
+        ok = bool(row.get("correct"))
+        table_rows.append(
+            "<tr>"
+            f"<td>{escape(str(row.get('numero') or '-'))}</td>"
+            f"<td>{escape(str(row.get('chapitre') or '-'))}</td>"
+            f"<td>{escape(str(row.get('enonce') or '-'))}</td>"
+            f"<td>{escape(str(row.get('attendu') or '-'))}</td>"
+            f"<td>{escape(str(row.get('reponse_stagiaire') or '-'))}</td>"
+            f"<td>{'OK' if ok else 'KO'}</td>"
+            f"<td>{escape(str(row.get('points_obtenus') or 0))}/{escape(str(row.get('points_max') or 0))}</td>"
+            "</tr>"
+        )
+
+    table_html = "".join(table_rows) if table_rows else '<tr><td colspan="7">Aucune réponse enregistrée.</td></tr>'
+
+    return f"""<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8" />
+<title>Résultat QCM #{attempt_id}</title>
+<style>
+  body {{ font-family: Arial, sans-serif; margin: 20px; color: #111; }}
+  h1 {{ margin-bottom: 6px; }}
+  .meta {{ margin-bottom: 14px; color: #444; }}
+  .score {{ font-weight: 700; margin-bottom: 12px; }}
+  table {{ width: 100%; border-collapse: collapse; font-size: 13px; }}
+  th, td {{ border: 1px solid #ddd; padding: 6px 8px; text-align: left; vertical-align: top; }}
+  th {{ background: #f7f7f7; }}
+  @media print {{
+    body {{ margin: 10mm; }}
+  }}
+</style>
+</head>
+<body>
+  <h1>Résultat QCM - tentative #{attempt_id}</h1>
+  <div class="meta">Stagiaire: <strong>{safe_trainee}</strong> — Questionnaire: <strong>{safe_title}</strong></div>
+  <div class="score">Score: {score_brut}/{total_possible_points} points — Note: {note_sur_20}/20</div>
+  <table>
+    <thead>
+      <tr>
+        <th>Q#</th><th>Chapitre</th><th>Énoncé</th><th>Attendu</th><th>Réponse stagiaire</th><th>Résultat</th><th>Points</th>
+      </tr>
+    </thead>
+    <tbody>{table_html}</tbody>
+  </table>
+</body>
+</html>"""
+
+
 def build_questionnaire_scan_html(questionnaire_title: str, questions: Iterable[Mapping[str, object]]) -> str:
     """Generate an A4 scan-optimized sheet to simplify OCR/LLM extraction."""
     safe_title = escape((questionnaire_title or "Questionnaire").strip())

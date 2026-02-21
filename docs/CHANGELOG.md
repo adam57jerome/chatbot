@@ -5,6 +5,9 @@
 - Correction du calcul de note QCM: la note /20 est désormais calculée sur le **total de points possibles** (support des questions pondérées).
 - Ajout d'une authentification simple et sécurisée pour FastAPI + Streamlit (variables d'environnement, login/logout, session).
 - Ajout de tests unitaires sur les helpers d'authentification et le calcul de note pondéré.
+- Historique QCM enrichi: détail par question (attendu vs réponse stagiaire, points obtenus/max) directement consultable dans Streamlit.
+- Export du résultat d'un passage en HTML imprimable pour génération PDF (imprimer > Enregistrer en PDF) à remettre au stagiaire.
+- Affichage des scores harmonisé en points obtenus / points possibles dans l'UI des passages.
 
 ## 2026-02-20
 ### Module Web/API (correctif middleware)

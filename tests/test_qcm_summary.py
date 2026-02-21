@@ -7,6 +7,8 @@ from app.qcm_service import (
     create_questionnaire,
     delete_attempt,
     get_attempt_answers_map,
+    get_attempt_review_rows,
+    get_total_possible_points_for_questionnaire,
     parse_possible_answers,
     get_trainee_qcm_summary,
     start_attempt,
@@ -133,3 +135,31 @@ def test_possible_answers_are_stored_and_parsed_variable_count():
 def test_possible_answers_empty_returns_empty_list():
     assert parse_possible_answers(None) == []
     assert parse_possible_answers("") == []
+
+
+def test_attempt_review_rows_include_expected_and_trainee_answers():
+    with SessionLocal() as db:
+        trainee = Stagiaire(nom="Review", prenom="User", email="review.user@example.com")
+        db.add(trainee)
+        db.commit()
+        db.refresh(trainee)
+
+        q = create_questionnaire(db, "QCM Review", "desc")
+        q1 = add_question(db, q.id, 1, "B", chapitre="Mathématiques", points=2)
+        attempt = start_attempt(db, trainee.id, q.id)
+        submit_attempt(db, attempt.id, {q1.id: "A"})
+
+        rows = get_attempt_review_rows(db, attempt.id)
+        assert len(rows) == 1
+        assert rows[0]["attendu"] == "B"
+        assert rows[0]["reponse_stagiaire"] == "A"
+        assert rows[0]["points_max"] == 2
+
+
+def test_total_possible_points_for_questionnaire_uses_weighted_questions():
+    with SessionLocal() as db:
+        q = create_questionnaire(db, "QCM Pondéré", "desc")
+        add_question(db, q.id, 1, "A", chapitre="Français", points=3)
+        add_question(db, q.id, 2, "B", chapitre="Français", points=2)
+
+        assert get_total_possible_points_for_questionnaire(db, q.id) == 5
