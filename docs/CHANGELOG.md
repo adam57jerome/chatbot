@@ -8,6 +8,9 @@
 - Historique QCM enrichi: détail par question (attendu vs réponse stagiaire, points obtenus/max) directement consultable dans Streamlit.
 - Export du résultat d'un passage en HTML imprimable pour génération PDF (imprimer > Enregistrer en PDF) à remettre au stagiaire.
 - Affichage des scores harmonisé en points obtenus / points possibles dans l'UI des passages.
+- Export natif **PDF** du résultat d'un passage (sans étape navigateur) + option d'envoi email SMTP au stagiaire.
+- Ajout d'un stockage persistant `total_possible_points` dans `qcm_attempts` (migration safe + backfill) pour figer l'historique.
+- Historique détaillé: filtre **Voir uniquement erreurs** pour accélérer la correction pédagogique.
 
 ## 2026-02-20
 ### Module Web/API (correctif middleware)

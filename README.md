@@ -190,7 +190,10 @@ Le module QCM ajoute :
 - gestion des **questions QCM** avec résultat attendu
 - **passages stagiaires** avec correction automatique
 - historique des passages avec détail par question (**attendu** vs **réponse stagiaire**)
+- filtre **Voir uniquement erreurs** dans le détail d'une tentative
 - export du détail d'un passage en **HTML imprimable** (génération PDF via navigateur)
+- export natif **PDF** (bouton direct)
+- envoi optionnel du PDF par email (SMTP)
 - score brut + conversion **note sur 20** (arrondie à 1 décimale)
 
 ### Calcul de note
@@ -255,3 +258,15 @@ Comportement :
 - FastAPI : page `/login` + session + `/logout`.
 - Streamlit : formulaire de connexion au démarrage + bouton de déconnexion en sidebar.
 
+
+
+### Envoi email optionnel du PDF QCM
+
+Variables SMTP supportées :
+- `SMTP_HOST` (obligatoire)
+- `SMTP_PORT` (optionnel, défaut `587`)
+- `SMTP_USER` / `SMTP_PASSWORD` (optionnel selon serveur)
+- `SMTP_FROM` (obligatoire)
+- `SMTP_USE_TLS` (`1` par défaut, mettre `0` pour désactiver STARTTLS)
+
+Sans ces variables, le bouton d'envoi email reste informatif et n'envoie rien.

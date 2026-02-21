@@ -211,6 +211,7 @@ def submit_attempt(db: Session, attempt_id: int, answers_dict: dict[int, str | N
     attempt.score_brut = score_brut
     attempt.total_questions = total_questions
     attempt.note_sur_20 = note
+    attempt.total_possible_points = total_possible_points
     db.commit()
 
     return AttemptResult(
@@ -228,6 +229,16 @@ def get_total_possible_points_for_questionnaire(db: Session, questionnaire_id: i
         )
     )
     return int(total or 0)
+
+
+def get_attempt_total_possible_points(db: Session, attempt_id: int) -> int:
+    attempt = db.get(QCMAttempt, attempt_id)
+    if not attempt:
+        return 0
+    stored = int(attempt.total_possible_points or 0)
+    if stored > 0:
+        return stored
+    return get_total_possible_points_for_questionnaire(db, attempt.questionnaire_id)
 
 
 def get_attempt_review_rows(db: Session, attempt_id: int) -> list[dict[str, object]]:

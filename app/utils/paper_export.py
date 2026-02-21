@@ -3,6 +3,8 @@ from __future__ import annotations
 from html import escape
 from typing import Iterable, Mapping
 
+from fpdf import FPDF
+
 
 def _normalize_questions(questions: Iterable[Mapping[str, object]]) -> list[dict[str, object]]:
     normalized: list[dict[str, object]] = []
@@ -146,6 +148,58 @@ def build_attempt_review_html(
   </table>
 </body>
 </html>"""
+
+
+def build_attempt_review_pdf_bytes(
+    *,
+    attempt_id: int,
+    trainee_name: str,
+    questionnaire_title: str,
+    note_sur_20: float,
+    score_brut: int,
+    total_possible_points: int,
+    rows: Iterable[Mapping[str, object]],
+) -> bytes:
+    pdf = FPDF()
+    pdf.set_auto_page_break(auto=True, margin=12)
+    pdf.add_page()
+    pdf.set_font("Helvetica", "B", 14)
+    pdf.cell(0, 8, f"Resultat QCM - tentative #{attempt_id}", ln=1)
+
+    pdf.set_font("Helvetica", size=11)
+    pdf.multi_cell(0, 7, f"Stagiaire: {trainee_name}\nQuestionnaire: {questionnaire_title}")
+    pdf.set_font("Helvetica", "B", 11)
+    pdf.cell(0, 8, f"Score: {score_brut}/{total_possible_points} points - Note: {note_sur_20}/20", ln=1)
+    pdf.ln(2)
+
+    pdf.set_font("Helvetica", "B", 10)
+    headers = ["Q", "Chapitre", "Attendu", "Reponse", "Res.", "Pts"]
+    widths = [10, 35, 38, 50, 14, 16]
+    for h, w in zip(headers, widths):
+        pdf.cell(w, 8, h, border=1)
+    pdf.ln(8)
+
+    pdf.set_font("Helvetica", size=9)
+    for row in rows:
+        q = str(row.get("numero") or "-")
+        chapitre = str(row.get("chapitre") or "-")[:28]
+        attendu = str(row.get("attendu") or "-")[:30]
+        reponse = str(row.get("reponse_stagiaire") or "-")[:40]
+        res = "OK" if bool(row.get("correct")) else "KO"
+        pts = f"{int(row.get('points_obtenus') or 0)}/{int(row.get('points_max') or 0)}"
+
+        values = [q, chapitre, attendu, reponse, res, pts]
+        for value, w in zip(values, widths):
+            pdf.cell(w, 7, value, border=1)
+        pdf.ln(7)
+
+        enonce = str(row.get("enonce") or "").strip()
+        if enonce:
+            pdf.set_font("Helvetica", "I", 8)
+            pdf.multi_cell(0, 5, f"Enonce: {enonce}", border=1)
+            pdf.set_font("Helvetica", size=9)
+
+    return bytes(pdf.output(dest="S"))
 
 
 def build_questionnaire_scan_html(questionnaire_title: str, questions: Iterable[Mapping[str, object]]) -> str:

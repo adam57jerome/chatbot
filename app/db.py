@@ -70,6 +70,7 @@ def init_db() -> None:
 
     Base.metadata.create_all(bind=engine)
     _ensure_qcm_questions_hierarchy_columns()
+    _ensure_qcm_attempts_columns()
 
 
 def _ensure_qcm_questions_hierarchy_columns() -> None:
@@ -152,3 +153,29 @@ def restore_sqlite_backup(backup_path: str | Path) -> Path:
     engine.dispose()
     shutil.copy2(source, destination)
     return destination
+
+
+def _ensure_qcm_attempts_columns() -> None:
+    if not DATABASE_URL.startswith("sqlite"):
+        return
+
+    with engine.begin() as conn:
+        rows = conn.exec_driver_sql("PRAGMA table_info('qcm_attempts')").fetchall()
+        if not rows:
+            return
+        cols = {r[1] for r in rows}
+
+        if "total_possible_points" not in cols:
+            conn.exec_driver_sql("ALTER TABLE qcm_attempts ADD COLUMN total_possible_points INTEGER DEFAULT 0")
+
+        conn.exec_driver_sql(
+            """
+            UPDATE qcm_attempts
+            SET total_possible_points = (
+                SELECT COALESCE(SUM(CASE WHEN qq.points > 0 THEN qq.points ELSE 0 END), 0)
+                FROM qcm_questions qq
+                WHERE qq.questionnaire_id = qcm_attempts.questionnaire_id
+            )
+            WHERE total_possible_points IS NULL OR total_possible_points <= 0
+            """
+        )

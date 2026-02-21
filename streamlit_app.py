@@ -37,7 +37,7 @@ from app.qcm_service import (
     get_attempt_answers_map,
     get_attempt_detail,
     get_attempt_review_rows,
-    get_total_possible_points_for_questionnaire,
+    get_attempt_total_possible_points,
     get_trainee_qcm_summary,
     list_attempts,
     list_questionnaires,
@@ -58,7 +58,13 @@ from app.schemas import (
     StagiaireUpdate,
 )
 from app.utils.json_safe import find_first_non_serializable_path, to_jsonable
-from app.utils.paper_export import build_attempt_review_html, build_questionnaire_paper_html, build_questionnaire_scan_html
+from app.utils.mailer import is_email_enabled, send_qcm_result_email
+from app.utils.paper_export import (
+    build_attempt_review_html,
+    build_attempt_review_pdf_bytes,
+    build_questionnaire_paper_html,
+    build_questionnaire_scan_html,
+)
 from ui.layout import (
     get_role_ui_preset,
     inject_app_css,
@@ -1050,7 +1056,7 @@ def page_qcm_passages() -> None:
                             "Date": a.date_passage,
                             "Stagiaire": f"{a.stagiaire.nom} {a.stagiaire.prenom}",
                             "Questionnaire": a.questionnaire.titre,
-                            "Score": f"{a.score_brut}/{get_total_possible_points_for_questionnaire(db, a.questionnaire_id)}",
+                            "Score": f"{a.score_brut}/{get_attempt_total_possible_points(db, a.id)}",
                             "Note/20": a.note_sur_20,
                         }
                         for a in attempts
@@ -1062,12 +1068,15 @@ def page_qcm_passages() -> None:
             if show_actions:
                 st.markdown("#### Détail / Modifier / Supprimer un passage")
                 for a in attempts:
-                    total_possible = get_total_possible_points_for_questionnaire(db, a.questionnaire_id)
+                    total_possible = get_attempt_total_possible_points(db, a.id)
                     with st.expander(
                         f"#{a.id} — {a.stagiaire.nom} {a.stagiaire.prenom} — {a.questionnaire.titre} — {a.score_brut}/{total_possible} pts — {a.note_sur_20}/20",
                         expanded=False,
                     ):
                         review_rows = get_attempt_review_rows(db, a.id)
+                        only_errors = st.checkbox("Voir uniquement erreurs", key=f"attempt_only_errors_{a.id}")
+                        rows_to_show = [r for r in review_rows if not r["correct"]] if only_errors else review_rows
+
                         st.dataframe(
                             [
                                 {
@@ -1079,7 +1088,7 @@ def page_qcm_passages() -> None:
                                     "Résultat": "OK" if r["correct"] else "KO",
                                     "Points": f"{r['points_obtenus']}/{r['points_max']}",
                                 }
-                                for r in review_rows
+                                for r in rows_to_show
                             ],
                             use_container_width=True,
                             hide_index=True,
@@ -1092,7 +1101,7 @@ def page_qcm_passages() -> None:
                             note_sur_20=float(a.note_sur_20 or 0),
                             score_brut=int(a.score_brut or 0),
                             total_possible_points=total_possible,
-                            rows=review_rows,
+                            rows=rows_to_show,
                         )
                         st.download_button(
                             "📄 Exporter résultat (HTML imprimable / PDF)",
@@ -1102,6 +1111,45 @@ def page_qcm_passages() -> None:
                             key=f"export_attempt_html_{a.id}",
                             help="Ouvrez ce fichier dans le navigateur puis Imprimer > Enregistrer en PDF.",
                         )
+                        pdf_bytes = build_attempt_review_pdf_bytes(
+                            attempt_id=a.id,
+                            trainee_name=f"{a.stagiaire.nom} {a.stagiaire.prenom}",
+                            questionnaire_title=a.questionnaire.titre,
+                            note_sur_20=float(a.note_sur_20 or 0),
+                            score_brut=int(a.score_brut or 0),
+                            total_possible_points=total_possible,
+                            rows=rows_to_show,
+                        )
+                        st.download_button(
+                            "🧾 Télécharger PDF",
+                            data=pdf_bytes,
+                            file_name=f"resultat_qcm_attempt_{a.id}.pdf",
+                            mime="application/pdf",
+                            key=f"export_attempt_pdf_{a.id}",
+                        )
+
+                        trainee_email = (a.stagiaire.email or "").strip()
+                        if trainee_email:
+                            email_enabled = is_email_enabled()
+                            if email_enabled:
+                                if st.button("📧 Envoyer le PDF par email", key=f"email_attempt_{a.id}"):
+                                    try:
+                                        send_qcm_result_email(
+                                            to_email=trainee_email,
+                                            subject=f"Résultat QCM - {a.questionnaire.titre}",
+                                            body_text=(
+                                                f"Bonjour {a.stagiaire.prenom},\n\n"
+                                                f"Vous trouverez en pièce jointe votre résultat QCM (tentative #{a.id}).\n"
+                                                f"Note: {a.note_sur_20}/20.\n"
+                                            ),
+                                            pdf_bytes=pdf_bytes,
+                                            filename=f"resultat_qcm_attempt_{a.id}.pdf",
+                                        )
+                                        toast("success", f"Email envoyé à {trainee_email}")
+                                    except Exception as exc:
+                                        st.error(f"Échec envoi email: {exc}")
+                            else:
+                                st.caption("Configurer SMTP_HOST et SMTP_FROM (optionnel) pour activer l'envoi email.")
 
                         c1, c2 = st.columns(2)
                         if c1.button("✏️ Modifier", key=f"edit_attempt_{a.id}", help="Modifier cette tentative"):

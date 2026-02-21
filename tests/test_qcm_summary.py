@@ -8,6 +8,7 @@ from app.qcm_service import (
     delete_attempt,
     get_attempt_answers_map,
     get_attempt_review_rows,
+    get_attempt_total_possible_points,
     get_total_possible_points_for_questionnaire,
     parse_possible_answers,
     get_trainee_qcm_summary,
@@ -163,3 +164,18 @@ def test_total_possible_points_for_questionnaire_uses_weighted_questions():
         add_question(db, q.id, 2, "B", chapitre="Français", points=2)
 
         assert get_total_possible_points_for_questionnaire(db, q.id) == 5
+
+
+def test_attempt_total_possible_points_is_stored_on_submit():
+    with SessionLocal() as db:
+        trainee = Stagiaire(nom="Store", prenom="Points", email="store.points@example.com")
+        db.add(trainee)
+        db.commit()
+        db.refresh(trainee)
+
+        q = create_questionnaire(db, "QCM Store", "desc")
+        q1 = add_question(db, q.id, 1, "A", chapitre="Français", points=3)
+        attempt = start_attempt(db, trainee.id, q.id)
+        submit_attempt(db, attempt.id, {q1.id: "A"})
+
+        assert get_attempt_total_possible_points(db, attempt.id) == 3

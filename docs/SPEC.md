@@ -47,8 +47,9 @@ Application locale (Streamlit + FastAPI + SQLAlchemy + SQLite) pour gérer des s
 - Édition de question: navigation combinée **liste déroulante + boutons Précédent/Suivant**.
 - Ordre d'import conservé pour l'affichage des questions (pas de tri alphabétique forcé).
 - Passages et correction automatique.
-- Historique des passages: consultation du détail question par question (résultat attendu, réponse du stagiaire, points).
-- Export du résultat d'un passage en fichier HTML imprimable (PDF via impression navigateur).
+- Historique des passages: consultation du détail question par question (résultat attendu, réponse du stagiaire, points), avec filtre **Voir uniquement erreurs**.
+- Export du résultat d'un passage en fichier HTML imprimable (PDF via impression navigateur) **et PDF natif**.
+- Envoi optionnel du compte-rendu PDF par email (SMTP) au stagiaire.
 
 ### Synthèse
 - Indicateurs globaux, top/bottom questionnaires.
@@ -77,7 +78,7 @@ Application locale (Streamlit + FastAPI + SQLAlchemy + SQLite) pour gérer des s
 ## 6) Modèle de données (résumé)
 - `stagiaires` -> FK `sections`, FK `formations`.
 - `questionnaires` -> `qcm_questions`.
-- `qcm_attempts` relie stagiaire + questionnaire.
+- `qcm_attempts` relie stagiaire + questionnaire et stocke `total_possible_points` au moment du passage.
 - `qcm_answers` relie tentative + question.
 - `qcm_questions`: `chapitre` (NOT NULL), `sous_chapitre` (NULL).
 

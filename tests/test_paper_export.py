@@ -1,6 +1,11 @@
 from __future__ import annotations
 
-from app.utils.paper_export import build_attempt_review_html, build_questionnaire_paper_html, build_questionnaire_scan_html
+from app.utils.paper_export import (
+    build_attempt_review_html,
+    build_attempt_review_pdf_bytes,
+    build_questionnaire_paper_html,
+    build_questionnaire_scan_html,
+)
 
 
 def test_build_questionnaire_paper_html_renders_checkboxes_and_metadata():
@@ -91,3 +96,27 @@ def test_build_attempt_review_html_contains_expected_and_trainee_answers():
     assert "Réponse stagiaire" in html
     assert "5" in html
     assert "Score: 3/5 points" in html
+
+
+def test_build_attempt_review_pdf_bytes_starts_with_pdf_signature():
+    pdf_bytes = build_attempt_review_pdf_bytes(
+        attempt_id=7,
+        trainee_name="Alice",
+        questionnaire_title="QCM",
+        note_sur_20=16.0,
+        score_brut=8,
+        total_possible_points=10,
+        rows=[
+            {
+                "numero": 1,
+                "chapitre": "Maths",
+                "enonce": "2+2",
+                "attendu": "4",
+                "reponse_stagiaire": "4",
+                "correct": True,
+                "points_obtenus": 2,
+                "points_max": 2,
+            }
+        ],
+    )
+    assert pdf_bytes.startswith(b"%PDF")
