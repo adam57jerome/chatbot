@@ -273,3 +273,7 @@ Variables SMTP supportées :
 - `SMTP_USE_TLS` (`1` par défaut, mettre `0` pour désactiver STARTTLS)
 
 Sans ces variables, le bouton d'envoi email reste informatif et n'envoie rien.
+
+
+Mode sécurité renforcé (optionnel):
+- `APP_AUTH_REQUIRED=1` force l'authentification. Si les identifiants ne sont pas configurés, l'accès est bloqué.

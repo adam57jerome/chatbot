@@ -27,6 +27,10 @@ def get_password_plain_fallback() -> str:
     return os.getenv("APP_ADMIN_PASSWORD") or ""
 
 
+def is_auth_strict_required() -> bool:
+    return (os.getenv("APP_AUTH_REQUIRED") or "0").strip() in {"1", "true", "TRUE", "yes", "YES"}
+
+
 def is_auth_enabled() -> bool:
     return bool(get_admin_user() and (get_password_hash() or get_password_plain_fallback()))
 
@@ -64,7 +68,7 @@ def verify_password(password: str, configured_hash: str, plain_fallback: str = "
 
 def verify_credentials(username: str, password: str) -> bool:
     if not is_auth_enabled():
-        return True
+        return not is_auth_strict_required()
     expected_user = get_admin_user()
     if not hmac.compare_digest(username.strip(), expected_user):
         return False
@@ -73,7 +77,7 @@ def verify_credentials(username: str, password: str) -> bool:
 
 def session_is_authenticated(session_data: dict[str, Any] | None) -> bool:
     if not is_auth_enabled():
-        return True
+        return not is_auth_strict_required()
     if not isinstance(session_data, dict):
         return False
     return hmac.compare_digest(str(session_data.get("auth_user") or ""), get_admin_user())

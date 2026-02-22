@@ -104,6 +104,7 @@ Application locale (Streamlit + FastAPI + SQLAlchemy + SQLite) pour gérer des s
 - Performance correcte sur volumes pédagogiques usuels.
 - Sauvegardes SQLite téléchargeables/restaurables.
 - Sécurité minimale: validation entrées, contraintes SQL, erreurs explicites.
+- Option sécurité renforcée: `APP_AUTH_REQUIRED=1` pour forcer un login configuré.
 
 ## 9) Contraintes techniques
 - Streamlit pour UI opérateur.

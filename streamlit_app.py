@@ -15,7 +15,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError, OperationalError
 
 from app import crud
-from app.auth import is_auth_enabled, verify_credentials
+from app.auth import is_auth_enabled, is_auth_strict_required, verify_credentials
 from charts.radar import build_radar_figure
 from app.db import (
     SessionLocal,
@@ -1052,7 +1052,12 @@ def page_qcm_passages() -> None:
             attempts = list_attempts(db, f_stagiaire or None, f_q or None, f_date if f_date else None)
 
             opt1, opt2 = st.columns(2)
-            rows_per_page = opt1.selectbox("Lignes par page", [5, 10, 20, 50], index=[5, 10, 20, 50].index(st.session_state.get("ui_attempt_rows_per_page", 10)), key="ui_attempt_rows_per_page")
+            rows_options = [5, 10, 20, 50]
+            current_rows = st.session_state.get("ui_attempt_rows_per_page", 10)
+            if current_rows not in rows_options:
+                current_rows = 10
+                st.session_state.ui_attempt_rows_per_page = 10
+            rows_per_page = opt1.selectbox("Lignes par page", rows_options, index=rows_options.index(current_rows), key="ui_attempt_rows_per_page")
             detail_mode = opt2.selectbox("Mode affichage", ["Résumé compact", "Détail complet"], key="ui_attempt_detail_mode")
 
             total_attempts = len(attempts)
@@ -1071,6 +1076,17 @@ def page_qcm_passages() -> None:
             start_idx = (st.session_state.ui_attempt_page - 1) * rows_per_page
             end_idx = start_idx + rows_per_page
             paged_attempts = attempts[start_idx:end_idx]
+
+            apply1, apply2 = st.columns(2)
+            if apply1.button("Appliquer mode à la page", key="apply_detail_mode_page"):
+                for attempt in paged_attempts:
+                    st.session_state[f"attempt_show_detail_{attempt.id}"] = detail_mode == "Détail complet"
+                st.rerun()
+            if apply2.button("Réinitialiser états de détail", key="reset_detail_states"):
+                for k in list(st.session_state.keys()):
+                    if str(k).startswith("attempt_show_detail_"):
+                        st.session_state.pop(k, None)
+                st.rerun()
 
             if st.session_state.get("ui_show_attempt_history", True):
                 st.dataframe(
@@ -1571,6 +1587,9 @@ def page_preferences() -> None:
 
 def ensure_streamlit_auth() -> None:
     if not is_auth_enabled():
+        if is_auth_strict_required():
+            st.error("Authentification obligatoire: configurez APP_ADMIN_USER et APP_ADMIN_PASSWORD_HASH (ou APP_ADMIN_PASSWORD).")
+            st.stop()
         return
 
     if st.session_state.get("auth_ok"):

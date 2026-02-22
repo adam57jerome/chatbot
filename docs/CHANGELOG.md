@@ -15,6 +15,9 @@
 - Historique QCM enrichi: pagination, mode `Résumé compact` / `Détail complet`, et bouton `Afficher/Masquer détail` par tentative (state métier).
 - Export PDF QCM enrichi: réponse attendue en vert, réponse stagiaire en vert/rouge selon justesse.
 - Rappel sécurité: authentification login/mot de passe disponible sur FastAPI et Streamlit via variables `APP_ADMIN_*`.
+- Correctif robustesse pagination: fallback sûr pour `Lignes par page` (évite crash si valeur session invalide).
+- Historique QCM: bouton `Appliquer mode à la page` + `Réinitialiser états de détail` pour cohérence du mode compact/détaillé.
+- Option sécurité stricte: `APP_AUTH_REQUIRED=1` bloque l'accès si les identifiants admin ne sont pas configurés.
 
 ## 2026-02-20
 ### Module Web/API (correctif middleware)
