@@ -1,0 +1,32 @@
+{% extends 'base.html' %}
+{% block title %}Sections{% endblock %}
+{% block content %}
+<h2>Sections</h2>
+<a class="btn" href="/sections/nouveau">Nouvelle section</a>
+
+<form method="get" class="filters">
+  <input type="text" name="q" placeholder="Recherche code/nom" value="{{ q }}" />
+  <button type="submit">Rechercher</button>
+</form>
+
+<table>
+  <thead><tr><th>Code</th><th>Nom</th><th>Période</th><th></th></tr></thead>
+  <tbody>
+    {% for section in sections %}
+      <tr>
+        <td>{{ section.code }}</td>
+        <td>{{ section.nom }}</td>
+        <td>{{ section.date_debut or '-' }} → {{ section.date_fin or '-' }}</td>
+        <td><a href="/sections/{{ section.id }}">Voir</a></td>
+      </tr>
+    {% else %}
+      <tr><td colspan="4">Aucune section.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+<div class="pager">
+  {% if has_prev %}<a href="?q={{ q }}&page={{ page - 1 }}">← Précédent</a>{% endif %}
+  <span>Page {{ page }}</span>
+  {% if has_next %}<a href="?q={{ q }}&page={{ page + 1 }}">Suivant →</a>{% endif %}
+</div>
+{% endblock %}

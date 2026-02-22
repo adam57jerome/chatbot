@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}Connexion{% endblock %}
+{% block content %}
+<section class="card" style="max-width: 420px; margin: 2rem auto;">
+  <h2>Connexion</h2>
+  <p>Entrez vos identifiants administrateur.</p>
+  {% if error %}
+    <div class="flash error">{{ error }}</div>
+  {% endif %}
+  <form method="post" action="/login">
+    <input type="hidden" name="next" value="{{ next }}" />
+    <label>Utilisateur</label>
+    <input type="text" name="username" required />
+    <label>Mot de passe</label>
+    <input type="password" name="password" required />
+    <button type="submit">Se connecter</button>
+  </form>
+</section>
+{% endblock %}

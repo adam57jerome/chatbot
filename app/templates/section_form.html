@@ -1,0 +1,26 @@
+{% extends 'base.html' %}
+{% block title %}{% if section and section.id %}Modifier{% else %}Nouvelle{% endif %} section{% endblock %}
+{% block content %}
+<h2>{% if section and section.id %}Modifier{% else %}Nouvelle{% endif %} section</h2>
+<form method="post">
+  <label>Code*
+    <input name="code" value="{{ section.code if section else '' }}" required />
+    {% if errors.code %}<small class="error">{{ errors.code }}</small>{% endif %}
+  </label>
+  <label>Nom*
+    <input name="nom" value="{{ section.nom if section else '' }}" required />
+    {% if errors.nom %}<small class="error">{{ errors.nom }}</small>{% endif %}
+  </label>
+  <label>Date début
+    <input type="date" name="date_debut" value="{{ section.date_debut if section else '' }}" />
+  </label>
+  <label>Date fin
+    <input type="date" name="date_fin" value="{{ section.date_fin if section else '' }}" />
+  </label>
+  <label>Description
+    <textarea name="description">{{ section.description if section else '' }}</textarea>
+  </label>
+  <button class="btn" type="submit">Enregistrer</button>
+  <a href="/sections">Annuler</a>
+</form>
+{% endblock %}

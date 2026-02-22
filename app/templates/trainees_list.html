@@ -1,0 +1,49 @@
+{% extends 'base.html' %}
+{% block title %}Stagiaires{% endblock %}
+{% block content %}
+<h2>Stagiaires</h2>
+<a class="btn" href="/stagiaires/nouveau">Nouveau stagiaire</a>
+
+<form method="get" class="filters">
+  <input type="text" name="q" placeholder="Recherche nom/prénom/email" value="{{ q }}" />
+  <select name="section">
+    <option value="" {% if section_filter == '' %}selected{% endif %}>Toutes sections</option>
+    <option value="none" {% if section_filter == 'none' %}selected{% endif %}>Sans section</option>
+    {% for section in sections %}
+      <option value="{{ section.id }}" {% if section_filter == (section.id|string) %}selected{% endif %}>{{ section.code }} - {{ section.nom }}</option>
+    {% endfor %}
+  </select>
+  <select name="formation">
+    <option value="" {% if formation_filter == '' %}selected{% endif %}>Toutes formations</option>
+    <option value="none" {% if formation_filter == 'none' %}selected{% endif %}>Sans formation</option>
+    {% for formation in formations %}
+      <option value="{{ formation.id }}" {% if formation_filter == (formation.id|string) %}selected{% endif %}>{{ formation.code }} - {{ formation.nom }}</option>
+    {% endfor %}
+  </select>
+  <button type="submit">Filtrer</button>
+</form>
+
+<table>
+  <thead><tr><th>Nom</th><th>Prénom</th><th>Email</th><th>Section</th><th>Formation souhaitée</th><th></th></tr></thead>
+  <tbody>
+    {% for trainee in trainees %}
+      <tr>
+        <td>{{ trainee.nom }}</td>
+        <td>{{ trainee.prenom }}</td>
+        <td>{{ trainee.email or '-' }}</td>
+        <td>{% if trainee.section %}{{ trainee.section.code }}{% else %}-{% endif %}</td>
+        <td>{% if trainee.formation_souhaitee %}{{ trainee.formation_souhaitee.code }} - {{ trainee.formation_souhaitee.nom }}{% else %}-{% endif %}</td>
+        <td><a href="/stagiaires/{{ trainee.id }}">Voir</a></td>
+      </tr>
+    {% else %}
+      <tr><td colspan="6">Aucun stagiaire.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<div class="pager">
+  {% if has_prev %}<a href="?q={{ q }}&section={{ section_filter }}&formation={{ formation_filter }}&page={{ page - 1 }}">← Précédent</a>{% endif %}
+  <span>Page {{ page }}</span>
+  {% if has_next %}<a href="?q={{ q }}&section={{ section_filter }}&formation={{ formation_filter }}&page={{ page + 1 }}">Suivant →</a>{% endif %}
+</div>
+{% endblock %}

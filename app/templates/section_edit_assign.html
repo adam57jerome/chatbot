@@ -1,0 +1,24 @@
+{% extends 'base.html' %}
+{% block title %}Éditer section{% endblock %}
+{% block content %}
+<h2>Éditer section {{ section.code }}</h2>
+<form method="post" action="/sections/{{ section.id }}/edit">
+  <label>Code*
+    <input name="code" value="{{ section.code }}" required />
+    {% if errors.code %}<small class="error">{{ errors.code }}</small>{% endif %}
+  </label>
+  <label>Nom*
+    <input name="nom" value="{{ section.nom }}" required />
+    {% if errors.nom %}<small class="error">{{ errors.nom }}</small>{% endif %}
+  </label>
+  <label>Date début <input type="date" name="date_debut" value="{{ section.date_debut or '' }}" /></label>
+  <label>Date fin <input type="date" name="date_fin" value="{{ section.date_fin or '' }}" /></label>
+  <label>Description <textarea name="description">{{ section.description or '' }}</textarea></label>
+  <button class="btn" type="submit">Enregistrer section</button>
+</form>
+
+<h3>Gestion des affectations (HTMX)</h3>
+<div id="assign-block">
+  {% include 'partials/section_assign_lists.html' %}
+</div>
+{% endblock %}

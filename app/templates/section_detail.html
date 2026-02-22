@@ -1,0 +1,21 @@
+{% extends 'base.html' %}
+{% block title %}Détail section{% endblock %}
+{% block content %}
+<h2>{{ section.code }} - {{ section.nom }}</h2>
+<p>{{ section.description or 'Pas de description.' }}</p>
+<p>Période: {{ section.date_debut or '-' }} → {{ section.date_fin or '-' }}</p>
+
+<h3>Stagiaires affectés</h3>
+<ul>
+  {% for trainee in trainees %}
+    <li><a href="/stagiaires/{{ trainee.id }}">{{ trainee.prenom }} {{ trainee.nom }}</a></li>
+  {% else %}
+    <li>Aucun stagiaire affecté.</li>
+  {% endfor %}
+</ul>
+
+<a class="btn" href="/sections/{{ section.id }}/edit">Modifier + Affectations</a>
+<form method="post" action="/sections/{{ section.id }}/delete" onsubmit="return confirm('Supprimer cette section ?');">
+  <button class="btn danger" type="submit">Supprimer</button>
+</form>
+{% endblock %}
