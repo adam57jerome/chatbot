@@ -48,7 +48,7 @@ Application locale (Streamlit + FastAPI + SQLAlchemy + SQLite) pour gérer des s
 - Ordre d'import conservé pour l'affichage des questions (pas de tri alphabétique forcé).
 - Passages et correction automatique.
 - Historique des passages: consultation du détail question par question (résultat attendu, réponse du stagiaire, points), avec filtre **Voir uniquement erreurs**.
-- Export du résultat d'un passage en fichier HTML imprimable (PDF via impression navigateur) **et PDF natif**.
+- Export du résultat d'un passage en fichier HTML imprimable (PDF via impression navigateur) **et PDF natif** avec mise en couleur pédagogique (vert/rouge).
 - Envoi optionnel du compte-rendu PDF par email (SMTP) au stagiaire.
 
 ### Synthèse
@@ -90,6 +90,7 @@ Application locale (Streamlit + FastAPI + SQLAlchemy + SQLite) pour gérer des s
 - QCM - Questionnaires: création questionnaire, ajout/édition/suppression question, filtres chapitre/sous-chapitre, import rapide, export CSV et export papier (.html).
 - QCM - Passages: sections en accordéon (préparation, saisie, historique) et options d'affichage par cases à cocher.
 - QCM - Passages: vue historique compatible Streamlit (sans accordéons imbriqués).
+- QCM - Passages: pagination des tentatives + mode `Résumé compact` / `Détail complet` + affichage/masquage du détail par tentative.
 - Stagiaires: filtres et options d'affichage (tableau/actions rapides) via cases à cocher.
 - Pages Gestion/QCM: assistant de page (3 étapes) + badges KPI rapides.
 - Pages longues: barre d'actions contextuelle en tête (Créer / actions principales).

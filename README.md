@@ -195,6 +195,8 @@ Le module QCM ajoute :
 - export natif **PDF** (bouton direct)
 - envoi optionnel du PDF par email (SMTP)
 - compatibilité Streamlit: pas d'expanders imbriqués dans l'historique QCM
+- pagination des tentatives + mode résumé compact / détail complet + bouton Afficher/Masquer détail
+- PDF avec réponses attendues en vert et réponses stagiaire en vert/rouge selon résultat
 - score brut + conversion **note sur 20** (arrondie à 1 décimale)
 
 ### Calcul de note

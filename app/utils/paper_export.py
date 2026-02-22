@@ -171,6 +171,12 @@ def build_attempt_review_pdf_bytes(
     pdf.set_font("Helvetica", "B", 11)
     pdf.cell(0, 8, f"Score: {score_brut}/{total_possible_points} points - Note: {note_sur_20}/20", ln=1)
     pdf.ln(2)
+    pdf.set_font("Helvetica", size=9)
+    pdf.set_text_color(0, 128, 0)
+    pdf.cell(0, 6, "Légende: vert = correct / attendu", ln=1)
+    pdf.set_text_color(200, 0, 0)
+    pdf.cell(0, 6, "rouge = réponse stagiaire fausse", ln=1)
+    pdf.set_text_color(0, 0, 0)
 
     pdf.set_font("Helvetica", "B", 10)
     headers = ["Q", "Chapitre", "Attendu", "Reponse", "Res.", "Pts"]
@@ -185,12 +191,34 @@ def build_attempt_review_pdf_bytes(
         chapitre = str(row.get("chapitre") or "-")[:28]
         attendu = str(row.get("attendu") or "-")[:30]
         reponse = str(row.get("reponse_stagiaire") or "-")[:40]
-        res = "OK" if bool(row.get("correct")) else "KO"
+        is_correct = bool(row.get("correct"))
+        res = "OK" if is_correct else "KO"
         pts = f"{int(row.get('points_obtenus') or 0)}/{int(row.get('points_max') or 0)}"
 
-        values = [q, chapitre, attendu, reponse, res, pts]
-        for value, w in zip(values, widths):
-            pdf.cell(w, 7, value, border=1)
+        pdf.set_text_color(0, 0, 0)
+        pdf.cell(widths[0], 7, q, border=1)
+        pdf.cell(widths[1], 7, chapitre, border=1)
+
+        # Réponse attendue (bonne réponse) en vert
+        pdf.set_text_color(0, 128, 0)
+        pdf.cell(widths[2], 7, attendu, border=1)
+
+        # Réponse stagiaire en vert/rouge selon résultat
+        if is_correct:
+            pdf.set_text_color(0, 128, 0)
+        else:
+            pdf.set_text_color(200, 0, 0)
+        pdf.cell(widths[3], 7, reponse, border=1)
+
+        # Résultat en vert/rouge
+        if is_correct:
+            pdf.set_text_color(0, 128, 0)
+        else:
+            pdf.set_text_color(200, 0, 0)
+        pdf.cell(widths[4], 7, res, border=1)
+
+        pdf.set_text_color(0, 0, 0)
+        pdf.cell(widths[5], 7, pts, border=1)
         pdf.ln(7)
 
         enonce = str(row.get("enonce") or "").strip()

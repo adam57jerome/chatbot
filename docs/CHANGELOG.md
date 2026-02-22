@@ -12,6 +12,9 @@
 - Ajout d'un stockage persistant `total_possible_points` dans `qcm_attempts` (migration safe + backfill) pour figer l'historique.
 - Historique détaillé: filtre **Voir uniquement erreurs** pour accélérer la correction pédagogique.
 - Correctif Streamlit: suppression des expanders imbriqués sur l'historique QCM (compatibilité API Streamlit).
+- Historique QCM enrichi: pagination, mode `Résumé compact` / `Détail complet`, et bouton `Afficher/Masquer détail` par tentative (state métier).
+- Export PDF QCM enrichi: réponse attendue en vert, réponse stagiaire en vert/rouge selon justesse.
+- Rappel sécurité: authentification login/mot de passe disponible sur FastAPI et Streamlit via variables `APP_ADMIN_*`.
 
 ## 2026-02-20
 ### Module Web/API (correctif middleware)

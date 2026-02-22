@@ -96,6 +96,9 @@ for key, value in {
     "ui_show_trainee_actions": True,
     "ui_show_attempt_history": True,
     "ui_show_attempt_actions": True,
+    "ui_attempt_page": 1,
+    "ui_attempt_rows_per_page": 10,
+    "ui_attempt_detail_mode": "Détail complet",
     "ui_show_section_table": True,
     "ui_show_section_actions": True,
     "ui_show_formation_table": True,
@@ -1048,6 +1051,27 @@ def page_qcm_passages() -> None:
             f_date = f3.date_input("Date", value=None)
             attempts = list_attempts(db, f_stagiaire or None, f_q or None, f_date if f_date else None)
 
+            opt1, opt2 = st.columns(2)
+            rows_per_page = opt1.selectbox("Lignes par page", [5, 10, 20, 50], index=[5, 10, 20, 50].index(st.session_state.get("ui_attempt_rows_per_page", 10)), key="ui_attempt_rows_per_page")
+            detail_mode = opt2.selectbox("Mode affichage", ["Résumé compact", "Détail complet"], key="ui_attempt_detail_mode")
+
+            total_attempts = len(attempts)
+            total_pages = max((total_attempts + rows_per_page - 1) // rows_per_page, 1)
+            if st.session_state.ui_attempt_page > total_pages:
+                st.session_state.ui_attempt_page = total_pages
+            nav1, nav2, nav3 = st.columns([1, 2, 1])
+            if nav1.button("⬅️ Page précédente", disabled=st.session_state.ui_attempt_page <= 1):
+                st.session_state.ui_attempt_page -= 1
+                st.rerun()
+            nav2.markdown(f"<div style='text-align:center;padding-top:8px'>Page {st.session_state.ui_attempt_page}/{total_pages}</div>", unsafe_allow_html=True)
+            if nav3.button("Page suivante ➡️", disabled=st.session_state.ui_attempt_page >= total_pages):
+                st.session_state.ui_attempt_page += 1
+                st.rerun()
+
+            start_idx = (st.session_state.ui_attempt_page - 1) * rows_per_page
+            end_idx = start_idx + rows_per_page
+            paged_attempts = attempts[start_idx:end_idx]
+
             if st.session_state.get("ui_show_attempt_history", True):
                 st.dataframe(
                     [
@@ -1059,7 +1083,7 @@ def page_qcm_passages() -> None:
                             "Score": f"{a.score_brut}/{get_attempt_total_possible_points(db, a.id)}",
                             "Note/20": a.note_sur_20,
                         }
-                        for a in attempts
+                        for a in paged_attempts
                     ],
                     use_container_width=True,
                     hide_index=True,
@@ -1067,31 +1091,42 @@ def page_qcm_passages() -> None:
 
             if show_actions:
                 st.markdown("#### Détail / Modifier / Supprimer un passage")
-                for a in attempts:
+                for a in paged_attempts:
                     total_possible = get_attempt_total_possible_points(db, a.id)
-                    st.markdown(
+                    title_cols = st.columns([4, 1])
+                    title_cols[0].markdown(
                         f"**#{a.id} — {a.stagiaire.nom} {a.stagiaire.prenom} — {a.questionnaire.titre} — {a.score_brut}/{total_possible} pts — {a.note_sur_20}/20**"
                     )
+                    detail_key = f"attempt_show_detail_{a.id}"
+                    st.session_state.setdefault(detail_key, detail_mode == "Détail complet")
+                    if title_cols[1].button(
+                        "Afficher détail" if not st.session_state[detail_key] else "Masquer détail",
+                        key=f"toggle_{a.id}",
+                    ):
+                        st.session_state[detail_key] = not st.session_state[detail_key]
+                        st.rerun()
+
                     review_rows = get_attempt_review_rows(db, a.id)
                     only_errors = st.checkbox("Voir uniquement erreurs", key=f"attempt_only_errors_{a.id}")
                     rows_to_show = [r for r in review_rows if not r["correct"]] if only_errors else review_rows
 
-                    st.dataframe(
-                        [
-                            {
-                                "Q": r["numero"],
-                                "Chapitre": r["chapitre"],
-                                "Énoncé": r["enonce"] or "-",
-                                "Attendu": r["attendu"] or "-",
-                                "Réponse stagiaire": r["reponse_stagiaire"] or "-",
-                                "Résultat": "OK" if r["correct"] else "KO",
-                                "Points": f"{r['points_obtenus']}/{r['points_max']}",
-                            }
-                            for r in rows_to_show
-                        ],
-                        use_container_width=True,
-                        hide_index=True,
-                    )
+                    if st.session_state[detail_key]:
+                        st.dataframe(
+                            [
+                                {
+                                    "Q": r["numero"],
+                                    "Chapitre": r["chapitre"],
+                                    "Énoncé": r["enonce"] or "-",
+                                    "Attendu": r["attendu"] or "-",
+                                    "Réponse stagiaire": r["reponse_stagiaire"] or "-",
+                                    "Résultat": "OK" if r["correct"] else "KO",
+                                    "Points": f"{r['points_obtenus']}/{r['points_max']}",
+                                }
+                                for r in rows_to_show
+                            ],
+                            use_container_width=True,
+                            hide_index=True,
+                        )
 
                     html_report = build_attempt_review_html(
                         attempt_id=a.id,
