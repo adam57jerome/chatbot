@@ -1,2 +1,2 @@
-streamlit
-openai
+streamlit>=1.40,<2
+SQLAlchemy>=2.0,<3
